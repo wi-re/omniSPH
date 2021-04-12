@@ -7,6 +7,20 @@
 #include <numeric>
 #include <chrono>
 #include <sstream>
+#include <atomic>
+
+constexpr bool inletSwitch = false;
+constexpr bool outletSwitch = false;
+constexpr bool gravitySwitch = true;
+constexpr bool backgroundPressureSwitch = false;
+enum struct particleConfig {
+    Domain, DamBreak, None
+};
+enum struct boundaryConfig {
+    Box, ObstacleBT, ObstacleBTLow, Trapezoid, CenterBox
+};
+constexpr boundaryConfig bc = boundaryConfig::Box;
+constexpr particleConfig pc = particleConfig::DamBreak;
 
 std::atomic<int64_t> uidCounter = 0;
 std::atomic<int64_t> emitCounter = 0;
@@ -248,6 +262,7 @@ void refineVorticity() {
 
 
 void externalForces() {
+    if(gravitySwitch)
   for (auto &p : particles)
     p.accel += gravity;
 }
@@ -291,7 +306,7 @@ void Integrate(void) {
     auto speed2 = ParameterManager::instance().get<scalar>("sim.inletSpeed");
     auto speedGoal = ParameterManager::instance().get<scalar>("sim.inletSpeedGoal");
     static auto& time = ParameterManager::instance().get<scalar>("sim.time");
-    auto delay = 0.07;
+    auto delay = 0.13;
     if (time < delay)
         speed2 = 0.0;
     else
@@ -306,16 +321,19 @@ void Integrate(void) {
     //auto particlesGen2 = genParticles(vec(domainWidth - 24.5 / domainScale, m - t), vec(domainWidth - 19.5 / domainScale, m + t));
     for (int32_t i = 0; i < particles.size(); ++i) {
         auto& p = particles[i];
+        if(inletSwitch)
         if (p.pos.x() > domainWidth - 2. * domainEpsilon) {
             p.vel = vec(speed2, 0.0);
             p.angularVelocity = 0.0;
             p.accel = vec(0.0,0.0);
         }
+        if(outletSwitch)
         if (p.pos.x() < 2. * domainEpsilon) {
             p.vel = vec(speed, 0.0);
             p.angularVelocity = 0.0;
             p.accel = vec(0.0, 0.0);
         }
+
         //auto [ix, iy] = getCellIdx(p.pos.x(), p.pos.y());
         //bool emit = true;
         ////std::cout << p.pos.x() << " x " << p.pos.y() << " -> " << ix << " : " << iy << std::endl;
@@ -433,8 +451,8 @@ void Integrate(void) {
 #pragma omp parallel for
   for (int32_t i = 0; i < particles.size(); ++i) {
       auto& p = particles[i];
-    if (p.pos.x() < domainEpsilon * 2.0)
-        p.vel = vec(speed, 0.0);
+    //if (p.pos.x() < domainEpsilon * 2.0)
+     //   p.vel = vec(speed, 0.0);
 
     auto pos = p.pos;
     int32_t it = 0;
@@ -452,7 +470,7 @@ void Integrate(void) {
         if (d < scale) {
             vtangent *= nd;
             //vtangent *= 0.0;
-            p.vel = vortho + vtangent;
+            //p.vel = vortho + vtangent;
         }
     }
 
@@ -669,7 +687,6 @@ void computeAcceleration(bool density = true) {
     di.pressure1 = di.pressure2;
   }
 }
-
 void updatePressure(bool density = true) {
     auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
 #pragma omp parallel for
@@ -688,7 +705,8 @@ void updatePressure(bool density = true) {
     scalar omega = (scalar)0.5;
     scalar pressure = di.pressure1 + omega / di.alpha * (di.source - kernelSum);
     //if(di.pressureBoundary == 0.0)
-    pressure += 1.0 * speed * speed * rho0;
+    if(backgroundPressureSwitch)
+        pressure += 1.0 * speed * speed * rho0;
     pressure = density ? std::max(pressure, (scalar)0.0) : pressure;
     scalar residual = kernelSum - di.source;
     if (::abs(di.alpha) < 1e-25 || pressure != pressure || pressure > 1e25)
@@ -699,7 +717,6 @@ void updatePressure(bool density = true) {
     di.rhoStar = std::max(residual, (scalar)-0.001) * area;
   }
 }
-
 scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density = true) {
   vec vecSum(0, 0), d_bar(0, 0);
   matrix M = matrix::Zero();
@@ -760,7 +777,6 @@ scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density = true) {
 	//  printParticle(i);
   return pressure;
 }
-
 void computeBoundaryPressure(bool density = true) {
 #pragma omp parallel for
   for (int32_t i = 0; i < particles.size(); ++i) {
@@ -785,7 +801,6 @@ void computeBoundaryPressure(bool density = true) {
     });
   }
 }
-
 void predictVelocity(bool density = true) {
 #pragma omp parallel for
   for (int32_t i = 0; i < particles.size(); ++i) {
@@ -805,7 +820,6 @@ void updateVelocity(bool density = true) {
   }
   
 }
-
 int32_t divergenceSolve() {
 	//return 0;
   predictVelocity();
@@ -839,6 +853,9 @@ int32_t densitySolve() {
   computeSourceTerm(true);
   //scalar error = (scalar)0.0;
   //int32_t counter = 0;
+  for (auto& dp : particlesDFSPH) {
+      dp.pressure1 = dp.pressure2 = 0.5 * dp.pressure1;
+  }
   scalar totalArea = area * (scalar)particles.size();
   static auto& limit = ParameterManager::instance().get<scalar>("dfsph.densityEta");
   static auto& error = ParameterManager::instance().get<scalar>("dfsph.densityError");
@@ -857,6 +874,12 @@ int32_t densitySolve() {
   computeBoundaryPressure(true);
   computeAcceleration(true);
   updateVelocity();
+
+
+  for (auto& dp : particlesDFSPH) {
+      dp.pressurePrevious = dp.pressure1;
+  }
+
   return counter;
 }
 
@@ -867,24 +890,25 @@ void resetFrame() {
   for (auto &p : particles)
     p.reset();
 
-  std::vector<Particle> filteredParticles;
-  filteredParticles.reserve(particles.size());
-  static auto& t = ParameterManager::instance().get<scalar>("sim.time");
-  for (auto& p : particles){
-      if (p.pos.x() > 0.0 && p.pos.x() < domainWidth - 1.25 * domainEpsilon && p.pos.y() > 0.0 && p.pos.y() < domainHeight )
-          filteredParticles.push_back(p);
+  if (outletSwitch) {
+    std::vector<Particle> filteredParticles;
+    filteredParticles.reserve(particles.size());
+    static auto& t = ParameterManager::instance().get<scalar>("sim.time");
+    for (auto& p : particles) {
+      if (p.pos.x() > 0.0 && p.pos.x() < domainWidth - 1.25 * domainEpsilon &&
+          p.pos.y() > 0.0 && p.pos.y() < domainHeight)
+        filteredParticles.push_back(p);
       else {
-          if (t == 0.0) continue;
-          auto ec = --emitCounter;
-          if (ec <= 0) {
-              emitCounter++;
-              filteredParticles.push_back(p);
-          }
+        if (t == 0.0) continue;
+        auto ec = --emitCounter;
+        if (ec <= 0) {
+          emitCounter++;
+          filteredParticles.push_back(p);
+        }
       }
-
+    }
+    particles = filteredParticles;
   }
-  particles = filteredParticles;
-
 
   if (particlesDFSPH.size() != particles.size())
     particlesDFSPH.resize(particles.size());
@@ -895,6 +919,8 @@ void resetFrame() {
 } 
 
 void emitParticles() {
+    if(!inletSwitch)
+    return;
     auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
     //auto dt = ParameterManager::instance().get<scalar>("sim.dt");
     static scalar offset = -dt * speed;
@@ -937,7 +963,8 @@ void emitParticles() {
     //std::cout << emitCounter << " [ " << uidCounter << " ] " << std::endl;
 
 }
-
+#include <random>
+#include <iterator>
 
 void initializeSPH(int32_t scene) {
     ParameterManager::instance().newParameter("ray.origin", vec(50,25), { .constant = false});
@@ -997,9 +1024,9 @@ void initializeSPH(int32_t scene) {
     ParameterManager::instance().newParameter("colorMap.auto", true, { .constant = false});
     ParameterManager::instance().newParameter("colorMap.max", scalar(1.5), { .constant = false , .range = Range{-10.0,10.0} });
 
-    ParameterManager::instance().newParameter("vorticity.nu_t", 0.05, { .constant = false, .range = Range{0.0, 1.0} });
+    ParameterManager::instance().newParameter("vorticity.nu_t", 0.025, { .constant = false, .range = Range{0.0, 1.0} });
     ParameterManager::instance().newParameter("vorticity.inverseInertia", 0.5, { .constant = false, .range = Range{0.0, 1.0} });
-    ParameterManager::instance().newParameter("vorticity.angularViscosity", 0.01, { .constant = false, .range = Range{0.0, 1.0} });
+    ParameterManager::instance().newParameter("vorticity.angularViscosity", 0.005, { .constant = false, .range = Range{0.0, 1.0} });
 
     ParameterManager::instance().newParameter("sim.inletSpeed", 0.0, { .constant = false, .range = Range{0.01,2.00} });
     ParameterManager::instance().newParameter("sim.inletSpeedGoal", .75, { .constant = false, .range = Range{0.01,2.00} });
@@ -1032,7 +1059,7 @@ void initializeSPH(int32_t scene) {
 
 
 	triangles.clear();
-    gravity = vec(0.0,0.0);
+    //gravity = vec(0.0,0.0);
     float d = 1.5;
 
     //switch (simulationCase) {
@@ -1184,12 +1211,16 @@ void initializeSPH(int32_t scene) {
                            {end.x(), end.y()},
                            {end.x(), end.y() + thickness},
                            {begin.x(), end.y() + thickness} };
-    std::vector<vec> Obs{ {mid.x() - c, mid.y() - c},
+    std::vector<vec> Obs{ {mid.x() - c, mid.y() - 0.75 * c},
+                           {mid.x() + 4.0 * c, mid.y() - 2.0 * c},
+                           {mid.x() + 4.0 * c, mid.y() + 2.0 * c},
+                           {mid.x() - c, mid.y() + 0.75 * c} };
+    std::vector<vec> ObsBoxCenter{ {mid.x() - c, mid.y() - c},
                            {mid.x() + c, mid.y() - c},
                            {mid.x() + c, mid.y() + c},
                            {mid.x() - c, mid.y() + c} };
 
-    std::vector<vec> ObsM{ {mid.x() - c, domainEpsilon},
+    std::vector<vec> ObsBox{ {mid.x() - c, domainEpsilon},
                            {mid.x() + c, domainEpsilon},
                            {mid.x() + c, domainEpsilon + c},
                            {mid.x() - c, domainEpsilon + c} };
@@ -1241,12 +1272,38 @@ void initializeSPH(int32_t scene) {
                            {left + width, domainHeight - domainEpsilon - height},
                            {left, domainHeight - domainEpsilon - height} };
 
+
+    std::vector<vec> ObsB2{ {left, domainEpsilon},
+                           {left + width, domainEpsilon},
+                           {left + width, domainEpsilon + 1.5 * height - 5.0 / domainScale},
+                           {left, domainEpsilon + height - 5.0 / domainScale} };
+
+    std::vector<vec> ObsT2{ {left, domainHeight - domainEpsilon},
+                           {left + width, domainHeight - domainEpsilon},
+                           {left + width, domainHeight - domainEpsilon - 1.5 * height},
+                           {left, domainHeight - domainEpsilon - height} };
+
+
     //obstacles.push_back(Upper);
     //obstacles.push_back(Lower);
     //obstacles.push_back(Obs);
+    switch (bc) {
+    case boundaryConfig::Box:
+        obstacles.push_back(ObsBox); break;
+    case boundaryConfig::CenterBox:
+        obstacles.push_back(ObsBoxCenter); break;
+    case boundaryConfig::ObstacleBT:
+        obstacles.push_back(ObsB);
+        obstacles.push_back(ObsT); break;
+    case boundaryConfig::ObstacleBTLow:
+        obstacles.push_back(ObsB2);
+        obstacles.push_back(ObsT2); break;
+    case boundaryConfig::Trapezoid:
+        obstacles.push_back(Obs); break;
+    }
     //obstacles.push_back(ObsM);
-    obstacles.push_back(ObsB);
-    obstacles.push_back(ObsT);
+    //obstacles.push_back(ObsB);
+    //obstacles.push_back(ObsT);
 
 //	std::cout << boundaryKernel(-1.0) << " : " << boundaryKernel(0.0) << " : " << boundaryKernel(1.0) << std::endl;
   // particles = genParticles(vec(domainEpsilon+0.5, domainEpsilon+0.5), vec(domainWidth / 8, domainHeight -
@@ -1262,58 +1319,75 @@ void initializeSPH(int32_t scene) {
    // auto offset = domainEpsilon / 5;
 
    // auto eps = scale / sqrt(2) * 0.2;
-    auto particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainWidth - domainEpsilon - spacing_2D, domainHeight - domainEpsilon - spacing_2D));
+    
+   
+    if (pc != particleConfig::None) {
+        std::vector<Particle> particles5;
+        switch (pc) {
+        case particleConfig::Domain:particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainWidth - domainEpsilon - spacing_2D, domainHeight - domainEpsilon - spacing_2D)); break;
+        case particleConfig::DamBreak:particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 20.0 / domainScale, domainEpsilon + 37.5 / domainScale)); break;
+        }
 
-    //auto candidates = particles3;
-    //if (simulationCase != cornerAngle::Box1 && simulationCase != cornerAngle::Box1_4 && simulationCase != cornerAngle::Box4) {
-    //    candidates = particles3;
-    //}
-    //else {
-    //    candidates = particles2;
+        //auto candidates = particles3;
+        //if (simulationCase != cornerAngle::Box1 && simulationCase != cornerAngle::Box1_4 && simulationCase != cornerAngle::Box4) {
+        //    candidates = particles3;
+        //}
+        //else {
+        //    candidates = particles2;
 
-    //}
-    auto candidates = particles5;
+        //}
+        auto candidates = particles5;
 
-    for (int32_t i = 0; i < candidates.size(); ++i)
-        getCell(candidates[i].pos.x(), candidates[i].pos.y()).push_back(i);
+        for (int32_t i = 0; i < candidates.size(); ++i)
+            getCell(candidates[i].pos.x(), candidates[i].pos.y()).push_back(i);
 
-    auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
-    std::vector<Particle> toEmit;
-    for (auto& p : candidates) {
-        auto [ix, iy] = getCellIdx(p.pos.x(), p.pos.y());
-        bool emit = true;
-        auto density = 0.0;
-        for (int32_t xi = -1; xi <= 1; ++xi) {
-            for (int32_t yi = -1; yi <= 1; ++yi) {
-                const auto& cell = getCell(ix + xi, iy + yi);
-                for (auto j : cell) {
-                    auto& pj = candidates[j];
-                    vec r = pj.pos - p.pos;
-                    density += area * W(p.pos, pj.pos);
-                    //pi.rho = std::max(pi.rho, 0.5);
+        auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
+        std::vector<Particle> toEmit;
+        for (auto& p : candidates) {
+            auto [ix, iy] = getCellIdx(p.pos.x(), p.pos.y());
+            bool emit = true;
+            auto density = 0.0;
+            for (int32_t xi = -1; xi <= 1; ++xi) {
+                for (int32_t yi = -1; yi <= 1; ++yi) {
+                    const auto& cell = getCell(ix + xi, iy + yi);
+                    for (auto j : cell) {
+                        auto& pj = candidates[j];
+                        vec r = pj.pos - p.pos;
+                        density += area * W(p.pos, pj.pos);
+                        //pi.rho = std::max(pi.rho, 0.5);
+                    }
                 }
             }
+            boundaryFunc(p.pos, [&density](auto bpos, auto d, auto k, auto gk, auto triangle) {
+                //std::cout << i << " - " << pi.pos.x() << " : " << pi.pos.y() << " -> " << bpos.x() << " : " << bpos.y() << ", " << d << ", " << k << ", " << gk.x() << " : " << gk.y() << std::endl;
+                if (d >= -1.1 * spacing_2D)
+                    density += k;
+                });
+            if (density < 1.02) {
+                p.uid = uidCounter++;
+                auto dist = p.pos.x() - 2.0 * domainEpsilon;
+                //if (dist < 35.0 / domainScale) {
+                //    dist /= 35.0 / domainScale;
+                //    p.vel = vec((1.0-dist) * speed, 0.0);
+                //}
+
+                toEmit.push_back(p);
+            }
         }
-        boundaryFunc(p.pos, [&density](auto bpos, auto d, auto k, auto gk, auto triangle) {
-            //std::cout << i << " - " << pi.pos.x() << " : " << pi.pos.y() << " -> " << bpos.x() << " : " << bpos.y() << ", " << d << ", " << k << ", " << gk.x() << " : " << gk.y() << std::endl;
-            if (d >= -1.1 * spacing_2D)
-                density += k;
-            });
-        if (density < 1.02) {
-            p.uid = uidCounter++;
-            auto dist = p.pos.x() - 2.0 * domainEpsilon;
-            //if (dist < 35.0 / domainScale) {
-            //    dist /= 35.0 / domainScale;
-            //    p.vel = vec((1.0-dist) * speed, 0.0);
-            //}
-            
-            toEmit.push_back(p);
+
+        std::default_random_engine engineObj(std::chrono::system_clock::now().time_since_epoch().count());
+        for (int32_t i = 0; i < 250; ++i) {
+            //creat a random engine object and seed it 
+            //The distribution will be used
+            std::uniform_int_distribution<size_t> randomInt{ 0ul, toEmit.size() - 1 };
+
+            //Erase
+            //toEmit.erase(toEmit.begin() + randomInt(engineObj));
         }
+        for (auto& p : toEmit)
+            particles.push_back(p);
+
     }
-    for (auto& p : toEmit) 
-        particles.push_back(p);
-
-
     //if (simulationCase != cornerAngle::Box1 && simulationCase != cornerAngle::Box1_4 && simulationCase != cornerAngle::Box4) {
     //    for (auto& p : particles3)
     //        particles.push_back(p);

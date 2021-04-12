@@ -26,22 +26,21 @@ using complex = std::complex<scalar>;
 using clk = std::chrono::high_resolution_clock;
 constexpr inline scalar domainScale = 20.0;
 
-inline scalar pointScale = 2.0 * domainScale;
 
 // 1.000 compression
-//constexpr inline scalar scale = 0.053599060968293831; // 100 rows
-////constexpr inline scalar scale = 0.10607382169550233; // 50 rows
-//constexpr inline scalar packing_2D = (scalar)0.21324955665222379 * scale;
-//constexpr inline scalar spacing_2D = (scalar)0.19775018866158592 * scale;
+constexpr inline scalar scale = 0.053599060968293831; // 100 rows
+//constexpr inline scalar scale = 0.10607382169550233; // 50 rows
+constexpr inline scalar packing_2D = (scalar)0.21324955665222379 * scale;
+constexpr inline scalar spacing_2D = (scalar)0.19775018866158592 * scale;
 
 // 0.9990
 //constexpr inline scalar scale = 0.0.10606839266103468; // 50 rows
 //constexpr inline scalar packing_2D = (scalar)0.21315991302770557 * scale;
 //constexpr inline scalar spacing_2D = (scalar)0.19778427897675366 * scale;
 
-constexpr inline scalar scale = 0.053599060968293831; // desired particles: 100
-constexpr inline scalar packing_2D = 0.21314955665222379 * scale; // desired compression: 1
-constexpr inline scalar spacing_2D = 0.19775018866158592 * scale; // actual delta: 0.99799999843898057
+//constexpr inline scalar scale = 0.053601735290989556; // desired particles: 100
+//constexpr inline scalar packing_2D = 0.2131392017874639 * scale; // desired compression: 1.0001
+//constexpr inline scalar spacing_2D = 0.19771610037860804 * scale; // actual delta: 0.99999999844972609
 
 // 1.005 compression
 //constexpr inline scalar scale = 0.10634501612361064; // 50 rows
@@ -66,8 +65,11 @@ constexpr inline scalar pi = 3.141592653589793238;
 constexpr inline scalar domainWidth = (scalar)250.f / domainScale;
 constexpr inline scalar domainHeight = (scalar)50.f / domainScale;
 
-inline int32_t screenWidth = (int32_t) (domainWidth * 20.0 * domainScale);
-inline int32_t screenHeight = (int32_t) (domainHeight * 20.0 * domainScale*2.0);
+constexpr inline scalar screenScale = 15.0;
+inline scalar pointScale = 2.0 * domainScale / 20.0 * 15.0;
+
+inline int32_t screenWidth = (int32_t) (domainWidth * screenScale * domainScale);
+inline int32_t screenHeight = (int32_t) (domainHeight * screenScale * domainScale*2.0);
 // used to create a gap from the domain to the edge of the window
 constexpr static scalar domainEpsilon = (scalar)5.f / domainScale;
 // used for direct forcing boundaries to reflect the velocity and reduce it's intensity
@@ -153,6 +155,7 @@ struct dfsphState {
   scalar rhoStar = scalar(0);
   vec vel = vec(0, 0);
   vec accel = vec(0, 0);
+  scalar pressurePrevious = scalar(0);
 };
 struct Triangle {
   vec v0 = vec(0, 0), v1 = vec(0, 0), v2 = vec(0, 0);
