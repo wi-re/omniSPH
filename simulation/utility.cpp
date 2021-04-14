@@ -151,19 +151,35 @@ void emitParticles() {
 
 }
 void initializeParameters(int32_t scene) {
-    auto test = std::vector<detail::iAny>{
+    auto vectorModes = std::vector<detail::iAny>{
             std::string("magnitude"),
             std::string("x"),
             std::string("y") };
+    auto buffers = std::vector<detail::iAny>{
+                std::string("velocity"),
+                std::string("angularVelocity"),
+                std::string("acceleration"),
+                std::string("density"),
+                std::string("neighbors"),
+                std::string("UID"),
+                std::string("alpha"),
+                std::string("area"),
+                std::string("pressure1"),
+                std::string("pressure2"),
+                std::string("pressureBoundary"),
+                std::string("source"),
+                std::string("dpdt"),
+                std::string("rhoStar"),
+                std::string("predictedVelocity"),
+                std::string("pressureAcceleration") };
+
     ParameterManager::instance().newParameter("colorMap.vectorMode", std::string("magnitude"), { .constant = false ,
-        .presets = test
+        .presets = vectorModes
         });
-    ParameterManager::instance().newParameter("colorMap.vectorMode", std::string("magnitude"), { .constant = false ,
-        .presets = std::vector<detail::iAny>{
-        std::string("magnitude"),
-        std::string("x"),
-        std::string("y") }
+    ParameterManager::instance().newParameter("colorMap.buffer", std::string("angularVelocity"), { .constant = false ,
+        .presets = buffers
         });
+
 
 
     ParameterManager::instance().newParameter("ray.origin", vec(50, 25), { .constant = false });
@@ -193,25 +209,6 @@ void initializeParameters(int32_t scene) {
     ParameterManager::instance().newParameter("render.showGrid", false, { .constant = false });
 
     ParameterManager::instance().newParameter("colorMap.min", scalar(-1.5), { .constant = false , .range = Range{-10.0,10.0} });
-    //ParameterManager::instance().newParameter("colorMap.buffer", std::string("angularVelocity"), { .constant = false ,
-    //    .presets = std::vector<detail::iAny>{
-    //        std::string("velocity"),
-    //        std::string("angularVelocity"),
-    //        std::string("acceleration"),
-    //        std::string("density"),
-    //        std::string("neighbors"),
-    //        std::string("UID"),
-    //        std::string("alpha"),
-    //        std::string("area"),
-    //        std::string("pressure1"),
-    //        std::string("pressure2"),
-    //        std::string("pressureBoundary"),
-    //        std::string("source"),
-    //        std::string("dpdt"),
-    //        std::string("rhoStar"),
-    //        std::string("predictedVelocity"),
-    //        std::string("pressureAcceleration")}
-    //    });
     ParameterManager::instance().newParameter("colorMap.map", 0, { .constant = false , .range = Range{0,3} });
     ParameterManager::instance().newParameter("colorMap.limit", true, { .constant = false });
     ParameterManager::instance().newParameter("colorMap.auto", true, { .constant = false });
