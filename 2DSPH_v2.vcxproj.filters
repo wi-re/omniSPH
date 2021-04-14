@@ -129,6 +129,12 @@
     <ClCompile Include="test.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="simulation\utility.cpp">
+      <Filter>Source Files\simulaiton</Filter>
+    </ClCompile>
+    <ClCompile Include="simulation\fluidMechanics.cpp">
+      <Filter>Source Files\simulaiton</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="tools\color.h">
@@ -223,6 +229,9 @@
     </ClInclude>
     <ClInclude Include="test.h">
       <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="simulation\config.h">
+      <Filter>Source Files\simulaiton</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

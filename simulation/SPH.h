@@ -174,6 +174,7 @@ inline scalar simulationTime = 0.0;
 std::vector<Particle> genParticles(vec minCoord, vec maxCoord, scalar packing = packing_2D);
 // initializes the SPH simulation with the given scene number
 void initializeSPH(int32_t scene = 0);
+void initializeParameters(int32_t scene = 0);
 // execute a single SPH timestep
 void timestep();
 void render();
@@ -199,6 +200,29 @@ constexpr inline boundaryMethod simulationMethod = boundaryMethod::sdf;
 
 
 
+#include <iomanip>
+
 std::vector<int32_t>& getCell(scalar x, scalar y);
 std::pair<int32_t, int32_t> getCellIdx(scalar x, scalar y);
 std::vector<int32_t>& getCell(int32_t xi, int32_t yi);
+
+
+void neighborList();
+void fillCells();
+void resetFrame();
+void density();
+void computeVorticity();
+void refineVorticity();
+void externalForces();
+void XSPH();
+void Integrate(void);
+void computeAlpha(bool density = true);
+void computeSourceTerm(bool density = true);
+void computeAcceleration(bool density = true);
+void updatePressure(bool density = true);
+scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density = true);
+void computeBoundaryPressure(bool density = true);
+void predictVelocity(bool density = true);
+void updateVelocity(bool density = true);
+int32_t divergenceSolve();
+int32_t densitySolve();

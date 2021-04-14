@@ -61,6 +61,7 @@ void GUI::initGL() {
 }
 
 void GUI::initSimulation() {
+    initializeParameters();
     initializeSPH();
 }
 
