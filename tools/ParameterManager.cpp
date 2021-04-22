@@ -340,6 +340,7 @@ std::pair<std::string, std::string> split(std::string s) {
 		};
 		addUifunction(typeid(bool), [](Parameter& param) {
 			bool& var = boost::any_cast<bool&>(param.param.val.value());
+			//std::cout << param.identifier << std::endl;
 			if (param.properties.hidden)return;
 			if (param.properties.constant) {
 				int32_t ib = var ? 1 : 0;
@@ -1037,9 +1038,11 @@ std::pair<std::string, std::string> split(std::string s) {
 				parameters[ns].push_back(std::make_pair(id, p.second));
 			}
 			for (auto param : parameters) {
+				//std::cout << param.first << std::endl;
 				if (param.first == "" ? true : ImGui::CollapsingHeader(param.first.c_str())) {
 					ImGui::PushID(param.first.c_str());
 					for (auto p : param.second) {
+						//std::cout << p.first << "::"<<p.second << std::endl;
 						if (uiFunctions.find(p.second->type) == uiFunctions.end()) {
 							ImGui::Text(p.first.c_str());
 						}

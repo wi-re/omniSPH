@@ -27,11 +27,16 @@ using clk = std::chrono::high_resolution_clock;
 constexpr inline scalar domainScale = 20.0;
 
 
-// 1.000 compression
-constexpr inline scalar scale = 0.053599060968293831; // 100 rows
-//constexpr inline scalar scale = 0.10607382169550233; // 50 rows
-constexpr inline scalar packing_2D = (scalar)0.21324955665222379 * scale;
-constexpr inline scalar spacing_2D = (scalar)0.19775018866158592 * scale;
+//// 1.000 compression
+//constexpr inline scalar scale = 0.053599060968293831; // 100 rows
+////constexpr inline scalar scale = 0.10607382169550233; // 50 rows
+//constexpr inline scalar packing_2D = (scalar)0.21324955665222379 * scale;
+//constexpr inline scalar spacing_2D = (scalar)0.19775018866158592 * scale;
+
+constexpr inline scalar scale = 0.053294748507066197; // desired particles: 100
+constexpr inline scalar packing_2D = 0.21410528420968161 * scale; // desired compression: 1
+constexpr inline scalar spacing_2D = 0.22151327787598094 * scale; // actual delta: 0.35000000000000009
+
 
 // 0.9990
 //constexpr inline scalar scale = 0.0.10606839266103468; // 50 rows

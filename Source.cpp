@@ -43,7 +43,7 @@ scalar sdpolygon2(std::vector<vec> v, vec p) {
 }
 
 int main(int argc, char* argv[]) 
-try 
+//try 
 {
     auto getDelta = [](scalar packing) {
         auto cubeMax = [](auto x) {
@@ -57,7 +57,10 @@ try
                 cheb::scalar dist = std::sqrt(x * x + y * y);
                 cheb::scalar q = dist / std::sqrt(20.0 / M_PI);
                 //std::cout << i << " : " << j << " -> " << x << " : " << y << " => " << dist << " : " << q << " ==> " << 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q)) << std::endl;
-                delta += 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q));
+                // spline
+                //delta += 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q));
+                // wendland 2
+                delta += 7.0 / 20.0 * power(std::max(1.0 - q, 0.0), 4) * (1.0 + 4.0 * q);
             }
         }
         return delta;
@@ -74,7 +77,10 @@ try
                 cheb::scalar dist = std::sqrt(x * x + y * y);
                 cheb::scalar q = dist / std::sqrt(20.0 / M_PI);
                 //std::cout << i << " : " << j << " -> " << x << " : " << y << " => " << dist << " : " << q << " ==> " << 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q)) << std::endl;
-                delta += 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q));
+                // spline
+                //delta += 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q));
+                // wendland 2
+                delta += 7.0 / 20.0 * power(std::max(1.0 - q,0.0), 4) * (1.0 + 4.0 * q);
             }
         }
         return delta;
@@ -84,6 +90,7 @@ try
     auto desiredCompression = 1.00;
     auto desiredParticles = 100.0;
 
+    std::cout << "Delta1: " << std::setprecision(17) << getDelta(0.01 * std::sqrt(20) / std::sqrt(M_PI))<<" <-> " << getDelta(0.5 * std::sqrt(20) / std::sqrt(M_PI)) << std::endl;
     cheb::Function packFun([&](cheb::scalar s) {
         return getDelta(s * std::sqrt(20) / std::sqrt(M_PI)) - desiredCompression;
         }, cheb::Domain{ 0.01,0.5 });
@@ -103,13 +110,13 @@ try
 
     inletPacking = chebPacking;
     inletSpacing = chebDist;
-    std::cout << "Error: " << getDelta(packing_2D * std::sqrt(20) / std::sqrt(M_PI)) << std::endl;
+    std::cout << "Error: " << getDelta(chebPacking * std::sqrt(20) / std::sqrt(M_PI)) << std::endl;
 
     cheb::scalar delta = 0.0;
     for (int32_t i = -5; i <= 5; ++i) {
         for (int32_t j = -5; j <= 5; ++j) {
-            cheb::scalar x = packing_2D * (2.0 * (cheb::scalar)i + (cheb::scalar)(j % 2));
-            cheb::scalar y = packing_2D * std::sqrt(3.0) * cheb::scalar(j);
+            cheb::scalar x = chebPacking * (2.0 * (cheb::scalar)i + (cheb::scalar)(j % 2));
+            cheb::scalar y = chebPacking * std::sqrt(3.0) * cheb::scalar(j);
             cheb::scalar dist = std::sqrt(x * x + y * y);
             cheb::scalar q = dist / support;
             //std::cout << i << " : " << j << " -> " << x << " : " << y << " => " << dist << " : " << q << " ==> " << 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q)) << std::endl;
@@ -198,4 +205,4 @@ try
     gui.renderLoop();
     return 0;
 }
-CATCH_DEFAULT
+//CATCH_DEFAULT

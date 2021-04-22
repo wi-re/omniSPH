@@ -151,11 +151,11 @@ void emitParticles() {
 
 }
 void initializeParameters(int32_t scene) {
-    auto vectorModes = std::vector<detail::iAny>{
+    static auto vectorModes = std::vector<detail::iAny>{
             std::string("magnitude"),
             std::string("x"),
             std::string("y") };
-    auto buffers = std::vector<detail::iAny>{
+    static auto buffers = std::vector<detail::iAny>{
                 std::string("velocity"),
                 std::string("angularVelocity"),
                 std::string("acceleration"),
@@ -173,11 +173,9 @@ void initializeParameters(int32_t scene) {
                 std::string("predictedVelocity"),
                 std::string("pressureAcceleration") };
 
-    ParameterManager::instance().newParameter("colorMap.vectorMode", std::string("magnitude"), { .constant = false ,
-        .presets = vectorModes
+    ParameterManager::instance().newParameter("colorMap.vectorMode", std::string("magnitude"), { .constant = false 
         });
-    ParameterManager::instance().newParameter("colorMap.buffer", std::string("angularVelocity"), { .constant = false ,
-        .presets = buffers
+    ParameterManager::instance().newParameter("colorMap.buffer", std::string("density"), { .constant = false 
         });
 
 
@@ -212,6 +210,7 @@ void initializeParameters(int32_t scene) {
     ParameterManager::instance().newParameter("colorMap.map", 0, { .constant = false , .range = Range{0,3} });
     ParameterManager::instance().newParameter("colorMap.limit", true, { .constant = false });
     ParameterManager::instance().newParameter("colorMap.auto", true, { .constant = false });
+
     ParameterManager::instance().newParameter("colorMap.max", scalar(1.5), { .constant = false , .range = Range{-10.0,10.0} });
 
     ParameterManager::instance().newParameter("vorticity.nu_t", 0.025, { .constant = false, .range = Range{0.0, 1.0} });

@@ -70,10 +70,16 @@ inline std::tuple<matrix, matrix, matrix> svd2x2(matrix M) {
 inline scalar W(vec a, vec b) {
   vec r = b - a;
   scalar q = r.norm() / support;
-  if (q < scalar(0.5))
-    return kernelConstant * (power(scalar(1.0) - q, 3) - scalar(4.0) * power(scalar(0.5) - q, 3));
-  else if (q <= scalar(1.0))
-    return kernelConstant * power(scalar(1.0) - q, 3);
+  //spline
+  //if (q < scalar(0.5))
+  //  return kernelConstant * (power(scalar(1.0) - q, 3) - scalar(4.0) * power(scalar(0.5) - q, 3));
+  //else if (q <= scalar(1.0))
+  //  return kernelConstant * power(scalar(1.0) - q, 3);
+  if (q < 1.0)
+      return 7.0 / pi / (support * support) * power(1.0 - q, 4) * (1.0 + 4.0 * q);
+  // wend 4
+  //if (q < 1.0)
+  //    return 9.0 / pi / (support * support) * power(1.0 - q, 6) * (1.0 + 6.0 * q + 35.0 / 3.0 * q * q);
   return scalar(0.0);
 }
 // simple spiky kernel gradient function. Assumes H = 1.0
@@ -84,14 +90,21 @@ inline vec gradW(vec a, vec b) {
   if (q < epsilon || q > scalar(1.0))
     return vec(scalar(0.0), scalar(0.0));
 
+  //spline
   //if (q < scalar(0.5))
   //    return -r/rn * gradConstant * (3.0 * power(scalar(1.0) - q, 2) - scalar(12.0) * power(scalar(0.5) - q, 2));
   //else if (q <= scalar(1.0))
   //    return -r / rn * gradConstant *3.0 *  power(scalar(1.0) - q, 2);
 
 
+  // spiky
+  //return -r/rn * scalar(30.0) / scalar(pi * support * support * support) * power(scalar(1.0) - q, 2);
 
-  return -r/rn * scalar(30.0) / scalar(pi * support * support * support) * power(scalar(1.0) - q, 2);
+  // wend2
+  return -r / rn * 7.0 / pi / (support * support * support) * (20.0 * q * power(1 - q, 3));
+
+  // wend4
+  //return -r / rn * 9.0 / pi / (support * support * support) * 56.0 / 3.0 * q * (5.0 * q + 1.0) * power(1 - q, 5);
 
   // these lines represent a normal cubic spline gradient function, also assuming H = 1.0
   // if (q <= scalar(0.5))
