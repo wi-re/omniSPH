@@ -24,6 +24,8 @@ void GUI::quit() {
     shouldStop = true;
     if (m_ffmpegPipe != nullptr)
         _pclose(m_ffmpegPipe);
+    if (summaryFileOpen)
+        summaryFile.close();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

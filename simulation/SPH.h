@@ -8,6 +8,7 @@
 #include <math.h>
 #include <sstream>
 #include <vector>
+#include <fstream>
 
 // comment this line out to use double precision for everything in the simulation
 //#define USE_SINGLE
@@ -25,6 +26,9 @@ using complex = std::complex<scalar>;
 // using define for easier usage of time
 using clk = std::chrono::high_resolution_clock;
 constexpr inline scalar domainScale = 20.0;
+
+inline std::ofstream summaryFile;
+inline bool summaryFileOpen = false;
 
 
 //// 1.000 compression

@@ -401,7 +401,7 @@ void Integrate(void) {
             vec vtangent = p.vel - vortho;
             auto nd = std::max(d, 0.0) / (scale);
             if (d < scale) {
-                vtangent *= nd;
+                //vtangent *= nd;
                 //vtangent *= 0.0;
                 //p.vel = vortho + vtangent;
             }
