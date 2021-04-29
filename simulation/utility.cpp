@@ -175,7 +175,7 @@ void initializeParameters(int32_t scene) {
 
     ParameterManager::instance().newParameter("colorMap.vectorMode", std::string("magnitude"), { .constant = false 
         });
-    ParameterManager::instance().newParameter("colorMap.buffer", std::string("density"), { .constant = false 
+    ParameterManager::instance().newParameter("colorMap.buffer", std::string("pressure1"), { .constant = false 
         });
 
 

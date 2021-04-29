@@ -25,6 +25,8 @@ void timestep() {
     if (t <= 1.0) {
         speed = speedGoal;
     }
+    if (t > 7.0)
+        inletSwitch = false;
 
 
     TIME_CODE(0, "Simulation - Overall",

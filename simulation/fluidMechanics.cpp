@@ -254,13 +254,13 @@ void Integrate(void) {
     //auto particlesGen2 = genParticles(vec(domainWidth - 24.5 / domainScale, m - t), vec(domainWidth - 19.5 / domainScale, m + t));
     for (int32_t i = 0; i < particles.size(); ++i) {
         auto& p = particles[i];
-        if (inletSwitch)
+        if (outletSwitch)
             if (p.pos.x() > domainWidth - 2. * domainEpsilon) {
                 p.vel = vec(speed2, 0.0);
                 p.angularVelocity = 0.0;
                 p.accel = vec(0.0, 0.0);
             }
-        if (outletSwitch)
+        if (inletSwitch)
             if (p.pos.x() < 2. * domainEpsilon) {
                 p.vel = vec(speed, 0.0);
                 p.angularVelocity = 0.0;
@@ -803,7 +803,7 @@ int32_t densitySolve() {
             error += di.rhoStar;
         error /= totalArea;
         // std::cout << "Density: " << counter << " -> " << error << std::endl;
-    } while (counter++ < 3 || (error > (scalar)limit && counter < 32));
+    } while (counter++ < 32 || (error > (scalar)limit && counter < 32));
     computeBoundaryPressure(true);
     computeAcceleration(true);
     updateVelocity();
