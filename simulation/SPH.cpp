@@ -1,3 +1,5 @@
+
+#define _CRT_SECURE_NO_WARNINGS
 #include "SPH.h"
 #include "2DMath.h"
 #include "config.h"
@@ -12,6 +14,154 @@
 
 
 #include <tools/timer.h>
+#include <filesystem>
+
+struct simulationData {
+    std::byte* internalData = nullptr;
+
+    // parameter based quantities
+    std::size_t num_particles;
+    int32_t frame, divergenceIterations, densityIterations;
+    scalar time, timestep, divergenceError, densityError, radius;
+
+    // computed data
+    scalar minVelocity = DBL_MAX, maxVelocity = -DBL_MAX;
+    scalar minAccel = DBL_MAX, maxAccel = -DBL_MAX;
+
+    scalar minPressure = DBL_MAX, maxPressure = -DBL_MAX;
+    scalar minDensity = DBL_MAX, maxDensity = -DBL_MAX;
+    scalar minAngular = DBL_MAX, maxAngular = -DBL_MAX;
+    scalar totalKineticEnergy = 0.0, totalPotentialEnergy = 0.0;
+
+    // data
+    vec* positions, * velocities, * accelerations;
+    scalar* density, * pressure, * angularVelocity;
+    scalar* kineticEnergy, * potentialEnergy;
+    int64_t* UIDs;
+};
+#include <time.h>
+#include <iomanip>
+void dump() {
+    namespace fs = std::filesystem;
+    static fs::path basePath = fs::current_path() / "data";
+    static fs::path actualPath;
+
+    static bool init = false;
+    if (!init) {
+        const std::chrono::time_point<std::chrono::system_clock> now =
+            std::chrono::system_clock::now();
+        const std::time_t t_c = std::chrono::system_clock::to_time_t(now);
+        auto time = std::time(nullptr);
+        std::stringstream ss;
+        char buf[256];
+        ss << std::put_time(std::localtime(&t_c), "%F_%T"); // ISO 8601 without timezone information.
+        auto s = ss.str();
+        std::replace(s.begin(), s.end(), ':', '-');
+        actualPath = basePath / s;
+
+        fs::create_directories(actualPath);
+        auto summaryPath = actualPath / std::string("summary.sphlog");
+        std::ofstream outFile;
+        summaryFile.open(summaryPath, std::ios::out | std::ios::binary);
+        summaryFileOpen = true;
+        init = true;
+    }
+    auto& pm = ParameterManager::instance();
+    std::size_t num_ptcls = particles.size();
+    std::size_t payloadSize = sizeof(vec) * 3 + sizeof(scalar) * 5 + sizeof(int64_t);
+    std::byte* rawData = (std::byte*)malloc(num_ptcls * payloadSize);
+
+    simulationData data{ 
+        .internalData = rawData, 
+        .num_particles = num_ptcls,
+        .frame = pm.get<int32_t>("sim.frame"), 
+        .divergenceIterations = pm.get<int32_t>("dfsph.divergenceIterations"), .densityIterations = pm.get<int32_t>("dfsph.densityIterations"),
+        .time = pm.get<scalar>("sim.time"), .timestep = pm.get<scalar>("sim.dt"),
+        .divergenceError = pm.get<scalar>("dfsph.divergenceError"),.densityError = pm.get<scalar>("dfsph.densityError"),
+        .radius = pm.get<scalar>("ptcl.radius") };
+
+    std::cout << "Number of particles: " << data.num_particles << std::endl;
+    std::cout << "Time: " << data.time << " ( dt = " << data.timestep << " ) @ frame " << data.frame << std::endl;
+    std::cout << "Divergence/Density Iterations: " << data.divergenceIterations << " / " << data.densityIterations << std::endl;
+    std::cout << "Divergence/Density Error: " << data.divergenceError << " / " << data.densityError << std::endl;
+
+    for (int32_t i = 0; i < num_ptcls; ++i) {
+        const auto& p = particles[i];
+        const auto& dp = particlesDFSPH[i];
+
+        auto update = [](auto& minEntry, auto& maxEntry, auto candidate) {
+            minEntry = std::min(minEntry, candidate);
+            maxEntry = std::max(maxEntry, candidate);
+        };
+        update(data.minVelocity, data.maxVelocity, p.vel.norm());
+        update(data.minAccel, data.maxAccel, p.accel.norm());
+        update(data.minPressure, data.maxPressure, dp.pressure1);
+        update(data.minDensity, data.maxDensity, p.rho);
+        update(data.minAngular, data.maxAngular, p.angularVelocity);
+        data.totalKineticEnergy += 0.5 * mass * p.vel.squaredNorm();
+        data.totalPotentialEnergy += gravitySwitch ? mass * gravity.norm() * (p.pos.y() - domainEpsilon) : 0.0;
+    }
+    std::cout << "Range of " << "velocity" << " : " << data.minVelocity << " -> " << data.maxVelocity << std::endl;
+    std::cout << "Range of " << "accel" << " : " << data.minAccel << " -> " << data.maxAccel << std::endl;
+    std::cout << "Range of " << "pressure" << " : " << data.minPressure << " -> " << data.maxPressure << std::endl;
+    std::cout << "Range of " << "density" << " : " << data.minDensity << " -> " << data.maxDensity << std::endl;
+    std::cout << "Range of " << "angular" << " : " << data.minAngular << " -> " << data.maxAngular << std::endl;
+    std::cout << "Kinetic   Energy: " << data.totalKineticEnergy << std::endl;
+    std::cout << "Potential Energy: " << data.totalPotentialEnergy << std::endl;
+    std::cout << "Total Energy: " << data.totalKineticEnergy + data.totalPotentialEnergy << std::endl;
+
+    std::cout << "rawData allocation size: " << payloadSize * num_ptcls << " : " << num_ptcls << " x " << payloadSize << std::endl;
+    data.positions = (vec*)(rawData);
+    data.velocities = (vec*)(rawData + sizeof(vec) * num_ptcls);
+    data.accelerations = (vec*)(rawData + 2 * sizeof(vec) * num_ptcls);
+    data.density = (scalar*)(rawData + 3 * sizeof(vec) * num_ptcls);
+    data.pressure = (scalar*)(rawData + 3 * sizeof(vec) * num_ptcls + sizeof(scalar) * num_ptcls);
+    data.angularVelocity = (scalar*)(rawData + 3 * sizeof(vec) * num_ptcls + 2 * sizeof(scalar) * num_ptcls);
+    data.kineticEnergy = (scalar*)(rawData + 3 * sizeof(vec) * num_ptcls + 3 * sizeof(scalar) * num_ptcls);
+    data.potentialEnergy = (scalar*)(rawData + 3 * sizeof(vec) * num_ptcls + 4 * sizeof(scalar) * num_ptcls);
+    data.UIDs = (int64_t*)(rawData + 3 * sizeof(vec) * num_ptcls + 5 * sizeof(scalar) * num_ptcls);
+
+
+
+    for (int32_t i = 0; i < num_ptcls; ++i) {
+        const auto& p = particles[i];
+        const auto& dp = particlesDFSPH[i];
+
+        data.positions[i] = p.pos;
+        data.velocities[i] = p.vel;
+        data.accelerations[i] = p.accel;
+        data.density[i] = p.rho;
+        data.pressure[i] = dp.pressure1;
+        data.angularVelocity[i] = p.angularVelocity;
+        data.kineticEnergy[i] = 0.5 * mass * p.vel.norm();
+        data.potentialEnergy[i] = gravitySwitch ? mass * gravity.norm() * (p.pos.y() - domainEpsilon) : 0.0;
+        data.UIDs[i] = p.uid;
+    }
+
+    std::stringstream sstream;
+    sstream << std::setfill('0') << std::setw(5) << pm.get<int32_t>("sim.frame") << ".sph";
+
+    fs::path file = actualPath / sstream.str();
+
+
+    std::cout << "Base Path: " << basePath << std::endl;
+    std::cout << "Actual Path: " << actualPath << std::endl;
+    std::cout << "File: " << file << std::endl;
+
+    std::ofstream outFile;
+    outFile.open(file, std::ios::out | std::ios::binary);
+
+    outFile.write(reinterpret_cast<char*>(&num_ptcls), sizeof(num_ptcls));
+    outFile.write(reinterpret_cast<char*>(&data), sizeof(simulationData));
+    outFile.write(reinterpret_cast<char*>(rawData), payloadSize * num_ptcls);
+
+    summaryFile.write(reinterpret_cast<char*>(&data), sizeof(simulationData));
+
+    outFile.close();
+    free(rawData);
+}
+
+
 void timestep() {
     dt = 0.002;
     auto& speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
@@ -39,7 +189,8 @@ void timestep() {
         TIME_CODE(9, "Simulation - XSPH", XSPH());
         TIME_CODE(10, "Simulation - Vorticity", refineVorticity());
         TIME_CODE(11, "Simulation - Integration", Integrate());
-        TIME_CODE(12, "Simulation - Emission", emitParticles());
+        TIME_CODE(12, "Simulation - Dump", dump());
+        TIME_CODE(13, "Simulation - Emission", emitParticles());
     );
 
     ParameterManager::instance().get<int32_t>("sim.frame")++;
