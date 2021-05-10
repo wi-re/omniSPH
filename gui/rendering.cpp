@@ -24,19 +24,28 @@ void GUI::renderFunctions() {
     glDisable(GL_COLOR_MATERIAL);
     glFlush();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-    glViewport(0, 0, screenWidth, screenHeight / 2);
-    auto b_init = ParameterManager::instance().get<std::string>("colorMap.buffer");
-    auto mi_init = ParameterManager::instance().get<scalar>("colorMap.min");
-    auto ma_init = ParameterManager::instance().get<scalar>("colorMap.max");
-    render();
-    glViewport(0, screenHeight / 2, screenWidth, screenHeight / 2);
-    ParameterManager::instance().get<scalar>("colorMap.min")=0.0;
-    ParameterManager::instance().get<scalar>("colorMap.max") = 1.25;
-    ParameterManager::instance().get<std::string>("colorMap.buffer") = std::string("velocity");
-    render();
-    ParameterManager::instance().get<std::string>("colorMap.buffer") = b_init;
-    ParameterManager::instance().get<scalar>("colorMap.min") = mi_init;
-    ParameterManager::instance().get<scalar>("colorMap.max") = ma_init;
+    if (dualView) {
+        glViewport(0, 0, screenWidth, screenHeight / 2);
+        auto b_init = ParameterManager::instance().get<std::string>("colorMap.buffer");
+        auto mi_init = ParameterManager::instance().get<scalar>("colorMap.min");
+        auto ma_init = ParameterManager::instance().get<scalar>("colorMap.max");
+        render();
+        glViewport(0, screenHeight / 2, screenWidth, screenHeight / 2);
+        ParameterManager::instance().get<scalar>("colorMap.min") = 0.0;
+        ParameterManager::instance().get<scalar>("colorMap.max") = 1.25;
+        ParameterManager::instance().get<std::string>("colorMap.buffer") = std::string("velocity");
+        render();
+        ParameterManager::instance().get<std::string>("colorMap.buffer") = b_init;
+        ParameterManager::instance().get<scalar>("colorMap.min") = mi_init;
+        ParameterManager::instance().get<scalar>("colorMap.max") = ma_init;
+    }
+    else {
+        auto b_init = ParameterManager::instance().get<std::string>("colorMap.buffer");
+        auto mi_init = ParameterManager::instance().get<scalar>("colorMap.min");
+        auto ma_init = ParameterManager::instance().get<scalar>("colorMap.max");
+        render();
+
+    }
     static int32_t i = 0;
     if (simulationRunning && ((i++) % 5 == 0))
         timestep();

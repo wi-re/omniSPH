@@ -46,7 +46,7 @@ void GUI::OSD(){
 
 
         auto x = std::clamp(m_cursorPosition.x(), 0.0, (scalar)screenWidth) / (scalar)screenWidth;
-        auto y = 2.0 * std::clamp(m_cursorPosition.y(), 0.0, (scalar)screenHeight) / (scalar)screenHeight;
+        auto y = (dualView ?2.0:1.0) * std::clamp(m_cursorPosition.y(), 0.0, (scalar)screenHeight) / (scalar)screenHeight;
         if (y > 1.0)
             y -= 1.0;
         y = 1.0 - y;
@@ -72,7 +72,7 @@ void GUI::OSD(){
         }
         if (closestIdx == -1)return;
         const float DISTANCE = 10.0f;
-        static int corner = 2;
+        static int corner = 3;
         ImGuiIO& io = ImGui::GetIO();
         if (corner != -1)
         {
