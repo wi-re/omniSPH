@@ -42,6 +42,8 @@ struct simulationData {
 #include <time.h>
 #include <iomanip>
 void dump() {
+    auto& pm = ParameterManager::instance();
+    if (pm.get<int32_t>("sim.frame") == 0) return;
     namespace fs = std::filesystem;
     static fs::path basePath = fs::current_path() / "data";
     static fs::path actualPath;
@@ -66,7 +68,6 @@ void dump() {
         summaryFileOpen = true;
         init = true;
     }
-    auto& pm = ParameterManager::instance();
     std::size_t num_ptcls = particles.size();
     std::size_t payloadSize = sizeof(vec) * 3 + sizeof(scalar) * 5 + sizeof(int64_t);
     std::byte* rawData = (std::byte*)malloc(num_ptcls * payloadSize);

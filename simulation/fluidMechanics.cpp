@@ -774,7 +774,7 @@ int32_t divergenceSolve() {
             error += di.dpdt;
         error /= totalArea;
         //std::cout << "Divergence: " << counter << " -> " << error << std::endl;
-    } while (counter++ < 2 || (error > (scalar)limit && counter < 256));
+    } while (counter++ < 3 || (error > (scalar)limit && counter < 3));
     computeBoundaryPressure(false);
     computeAcceleration(false);
     updateVelocity(false);
@@ -803,7 +803,7 @@ int32_t densitySolve() {
             error += di.rhoStar;
         error /= totalArea;
         // std::cout << "Density: " << counter << " -> " << error << std::endl;
-    } while (counter++ < 32 || (error > (scalar)limit && counter < 32));
+    } while (counter++ < 255 || (error > (scalar)limit && counter < 255));
     computeBoundaryPressure(true);
     computeAcceleration(true);
     updateVelocity();

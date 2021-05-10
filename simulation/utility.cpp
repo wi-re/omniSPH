@@ -237,7 +237,7 @@ void initializeParameters(int32_t scene) {
     ParameterManager::instance().newParameter("ptcl.area", area, { .constant = true });
     ParameterManager::instance().newParameter("ptcl.mass", mass, { .constant = true });
     ParameterManager::instance().newParameter("ptcl.maxVelocity", scalar(0), { .constant = true });
-    ParameterManager::instance().newParameter("ptcl.viscosityConstant", 0.01, { .constant = false, .range = Range{0.01, 0.05} });
+    ParameterManager::instance().newParameter("ptcl.viscosityConstant", 0.0001, { .constant = false, .range = Range{0.01, 0.05} });
 
     ParameterManager::instance().newParameter("dfsph.densityEta", scalar(0.001), { .constant = true });
     ParameterManager::instance().newParameter("dfsph.divergenceEta", scalar(0.001), { .constant = true });

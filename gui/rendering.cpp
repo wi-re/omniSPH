@@ -43,6 +43,11 @@ void GUI::renderFunctions() {
 
     // ACTUAL RENDERING CALL
 
+    auto time = ParameterManager::instance().get<scalar>("sim.time");
+    if (time > 15.0)
+        shouldStop = true;
+
+
     glBindVertexArray(0);
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
