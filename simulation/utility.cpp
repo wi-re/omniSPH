@@ -96,6 +96,17 @@ void resetFrame() {
         }
         particles = filteredParticles;
     }
+    std::vector<Particle> filteredParticles;
+    filteredParticles.reserve(particles.size());
+    static auto& t = ParameterManager::instance().get<scalar>("sim.time");
+    for (auto& p : particles) {
+        if (p.pos.x() < 0.9 * domainEpsilon || p.pos.x() > domainWidth - 0.9 * domainEpsilon ||
+            p.pos.y() < 0.9 * domainEpsilon || p.pos.y() > domainHeight - 0.9 * domainEpsilon);
+        else {
+            filteredParticles.push_back(p);
+        }
+    }
+    particles = filteredParticles;
 
     if (particlesDFSPH.size() != particles.size())
         particlesDFSPH.resize(particles.size());
@@ -208,7 +219,7 @@ void initializeParameters(int32_t scene) {
 
     ParameterManager::instance().newParameter("colorMap.min", scalar(-1.5), { .constant = false , .range = Range{-10.0,10.0} });
     ParameterManager::instance().newParameter("colorMap.map", 0, { .constant = false , .range = Range{0,3} });
-    ParameterManager::instance().newParameter("colorMap.limit", true, { .constant = false });
+    ParameterManager::instance().newParameter("colorMap.limit", false, { .constant = false });
     ParameterManager::instance().newParameter("colorMap.auto", true, { .constant = false });
 
     ParameterManager::instance().newParameter("colorMap.max", scalar(1.5), { .constant = false , .range = Range{-10.0,10.0} });
@@ -358,6 +369,7 @@ void initializeSPH(int32_t scene) {
     //        polygon.push_back(vec{ 50 + d,5 });
     //    }
     //}
+    // thin domain
     vec P1(domainEpsilon, domainEpsilon);
     vec P2(domainWidth - domainEpsilon, domainEpsilon);
     vec P3(domainWidth - domainEpsilon, domainHeight - domainEpsilon);
@@ -367,6 +379,17 @@ void initializeSPH(int32_t scene) {
     polygon.push_back(P3);
     polygon.push_back(P4);
     polygon.push_back(P1);
+
+    //vec P1(domainEpsilon, domainEpsilon);
+    //vec P2(domainWidth / 2.0, domainEpsilon);
+    //vec P3(domainWidth - domainEpsilon, domainHeight/5.0);
+    //vec P4(domainWidth - domainEpsilon, domainHeight - domainEpsilon);
+    //vec P5(domainEpsilon, domainHeight - domainEpsilon);
+    //polygon.push_back(P2);
+    //polygon.push_back(P3);
+    //polygon.push_back(P4);
+    //polygon.push_back(P5);
+    //polygon.push_back(P1);
     //float d = 0.0559f;
 
     //if (simulationCase == cornerAngle::Box4)
@@ -473,24 +496,31 @@ void initializeSPH(int32_t scene) {
                            {left + width, domainHeight - domainEpsilon - 1.5 * height},
                            {left, domainHeight - domainEpsilon - height} };
 
+    std::vector<vec> ObsStair{ {domainEpsilon,domainHeight/5.0},
+                           {domainEpsilon + 75.0 / domainScale, domainHeight / 5.0},
+                           {domainEpsilon + 75.0 / domainScale, domainHeight / 5.0 - 2.5 * scale},
+                           {domainEpsilon, domainHeight / 5.0 - 2.5 * scale} };
+    //obstacles.push_back(ObsStair);
 
     //obstacles.push_back(Upper);
     //obstacles.push_back(Lower);
     //obstacles.push_back(Obs);
-    switch (bc) {
-    case boundaryConfig::Box:
-        obstacles.push_back(ObsBox); break;
-    case boundaryConfig::CenterBox:
-        obstacles.push_back(ObsBoxCenter); break;
-    case boundaryConfig::ObstacleBT:
-        obstacles.push_back(ObsB);
-        obstacles.push_back(ObsT); break;
-    case boundaryConfig::ObstacleBTLow:
-        obstacles.push_back(ObsB2);
-        obstacles.push_back(ObsT2); break;
-    case boundaryConfig::Trapezoid:
-        obstacles.push_back(Obs); break;
-    }
+    // 
+    // thin domain obstacles
+    //switch (bc) {
+    //case boundaryConfig::Box:
+    //    obstacles.push_back(ObsBox); break;
+    //case boundaryConfig::CenterBox:
+    //    obstacles.push_back(ObsBoxCenter); break;
+    //case boundaryConfig::ObstacleBT:
+    //    obstacles.push_back(ObsB);
+    //    obstacles.push_back(ObsT); break;
+    //case boundaryConfig::ObstacleBTLow:
+    //    obstacles.push_back(ObsB2);
+    //    obstacles.push_back(ObsT2); break;
+    //case boundaryConfig::Trapezoid:
+    //    obstacles.push_back(Obs); break;
+    //}
     //obstacles.push_back(ObsM);
     //obstacles.push_back(ObsB);
     //obstacles.push_back(ObsT);
@@ -513,11 +543,12 @@ void initializeSPH(int32_t scene) {
 
     if (pc != particleConfig::None) {
         std::vector<Particle> particles5;
-        switch (pc) {
-        case particleConfig::Domain:particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainWidth - domainEpsilon - spacing_2D, domainHeight - domainEpsilon - spacing_2D)); break;
-        case particleConfig::DamBreak:particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 20.0 / domainScale, domainEpsilon + 37.5 / domainScale)); break;
-        }
-
+        // thin domain
+        //switch (pc) {
+        //case particleConfig::Domain:particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainWidth - domainEpsilon - spacing_2D, domainHeight - domainEpsilon - spacing_2D)); break;
+        //case particleConfig::DamBreak:particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 20.0 / domainScale, domainEpsilon + 37.5 / domainScale)); break;
+        //}
+        particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 40.0 / domainScale, domainHeight * 3.0 / 5.0));
         //auto candidates = particles3;
         //if (simulationCase != cornerAngle::Box1 && simulationCase != cornerAngle::Box1_4 && simulationCase != cornerAngle::Box4) {
         //    candidates = particles3;

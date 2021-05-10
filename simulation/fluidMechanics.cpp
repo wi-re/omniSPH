@@ -551,7 +551,7 @@ void Integrate(void) {
     t = simulationTime;
     static auto& dtmin = ParameterManager::instance().get<scalar>("sim.minDt");
     static auto& dtmax = ParameterManager::instance().get<scalar>("sim.maxDt");
-    dt = std::clamp(0.4 / vMax, dtmin, dtmax);
+    dt = std::clamp(0.4 * support / vMax, dtmin, dtmax);
     static auto& dtr = ParameterManager::instance().get<scalar>("sim.dt");
     dtr = dt;
 }

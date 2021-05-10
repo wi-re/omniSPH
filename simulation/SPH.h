@@ -37,7 +37,7 @@ inline bool summaryFileOpen = false;
 //constexpr inline scalar packing_2D = (scalar)0.21324955665222379 * scale;
 //constexpr inline scalar spacing_2D = (scalar)0.19775018866158592 * scale;
 
-constexpr inline scalar scale = 0.053294748507066197; // desired particles: 100
+constexpr inline scalar scale = 0.073294748507066197; // desired particles: 100
 constexpr inline scalar packing_2D = 0.21410528420968161 * scale; // desired compression: 1
 constexpr inline scalar spacing_2D = 0.22151327787598094 * scale; // actual delta: 0.35000000000000009
 
@@ -71,14 +71,22 @@ constexpr inline scalar pi = 3.141592653589793238;
 // parameters for the overall simulation
 // used to define the overall simulation domain (including the outer gap)
 
-constexpr inline scalar domainWidth = (scalar)250.f / domainScale;
-constexpr inline scalar domainHeight = (scalar)50.f / domainScale;
+// thin domain
+//constexpr inline scalar domainWidth = (scalar)250.f / domainScale;
+//constexpr inline scalar domainHeight = (scalar)50.f / domainScale;
+//constexpr inline scalar screenScale = 15.0;
 
-constexpr inline scalar screenScale = 15.0;
+constexpr inline scalar domainWidth = (scalar)200.f / domainScale;
+constexpr inline scalar domainHeight = (scalar)200.f / domainScale;
+constexpr inline scalar screenScale = 10.0;
+
+
+
+
 inline scalar pointScale = 2.0 * domainScale / 20.0 * 15.0;
-
+constexpr inline bool dualView = false;
 inline int32_t screenWidth = (int32_t) (domainWidth * screenScale * domainScale);
-inline int32_t screenHeight = (int32_t) (domainHeight * screenScale * domainScale*2.0);
+inline int32_t screenHeight = (int32_t) (domainHeight * screenScale * domainScale*(dualView ? 2.0 : 1.0));
 // used to create a gap from the domain to the edge of the window
 constexpr static scalar domainEpsilon = (scalar)5.f / domainScale;
 // used for direct forcing boundaries to reflect the velocity and reduce it's intensity
