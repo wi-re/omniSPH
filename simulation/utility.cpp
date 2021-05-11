@@ -186,7 +186,7 @@ void initializeParameters(int32_t scene) {
 
     ParameterManager::instance().newParameter("colorMap.vectorMode", std::string("magnitude"), { .constant = false 
         });
-    ParameterManager::instance().newParameter("colorMap.buffer", std::string("pressure1"), { .constant = false 
+    ParameterManager::instance().newParameter("colorMap.buffer", std::string("velocity"), { .constant = false 
         });
 
 
@@ -235,8 +235,8 @@ void initializeParameters(int32_t scene) {
     ParameterManager::instance().newParameter("props.scale", scale, { .constant = true });
     ParameterManager::instance().newParameter("ptcl.render", true, { .constant = false });
     ParameterManager::instance().newParameter("ptcl.radius", radius, { .constant = true });
-    ParameterManager::instance().newParameter("sim.minDt", 0.00001, { .constant = false, .range = Range{0.0001, 0.016} });
-    ParameterManager::instance().newParameter("sim.maxDt", 0.002, { .constant = false, .range = Range{0.0001, 0.016} });
+    ParameterManager::instance().newParameter("sim.minDt", 0.001, { .constant = false, .range = Range{0.0001, 0.016} });
+    ParameterManager::instance().newParameter("sim.maxDt", 0.001, { .constant = false, .range = Range{0.0001, 0.016} });
     ParameterManager::instance().newParameter("sim.dt", dt, { .constant = true });
     ParameterManager::instance().newParameter("props.domainWidth", domainWidth, { .constant = true });
     ParameterManager::instance().newParameter("props.domainHeight", domainHeight, { .constant = true });
@@ -605,8 +605,10 @@ void initializeSPH(int32_t scene) {
             //Erase
             //toEmit.erase(toEmit.begin() + randomInt(engineObj));
         }
-        for (auto& p : toEmit)
+        for (auto& p : toEmit) {
             particles.push_back(p);
+            particlesDFSPH.push_back(dfsphState{});
+        }
 
     }
     //if (simulationCase != cornerAngle::Box1 && simulationCase != cornerAngle::Box1_4 && simulationCase != cornerAngle::Box4) {

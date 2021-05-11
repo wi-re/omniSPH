@@ -31,11 +31,12 @@ struct simulationData {
     scalar minPressure = DBL_MAX, maxPressure = -DBL_MAX;
     scalar minDensity = DBL_MAX, maxDensity = -DBL_MAX;
     scalar minAngular = DBL_MAX, maxAngular = -DBL_MAX;
+    scalar minError = DBL_MAX, maxError = -DBL_MAX;
     scalar totalKineticEnergy = 0.0, totalPotentialEnergy = 0.0;
 
     // data
     vec* positions, * velocities, * accelerations;
-    scalar* density, * pressure, * angularVelocity;
+    scalar* density, * pressure, * angularVelocity, *error;
     scalar* kineticEnergy, * potentialEnergy;
     int64_t* UIDs;
 };
@@ -69,7 +70,7 @@ void dump() {
         init = true;
     }
     std::size_t num_ptcls = particles.size();
-    std::size_t payloadSize = sizeof(vec) * 3 + sizeof(scalar) * 5 + sizeof(int64_t);
+    std::size_t payloadSize = sizeof(vec) * 4 + sizeof(scalar) * 5 + sizeof(int64_t);
     std::byte* rawData = (std::byte*)malloc(num_ptcls * payloadSize);
 
     simulationData data{ 
@@ -99,6 +100,7 @@ void dump() {
         update(data.minPressure, data.maxPressure, dp.pressure1);
         update(data.minDensity, data.maxDensity, p.rho);
         update(data.minAngular, data.maxAngular, p.angularVelocity);
+        update(data.minError, data.maxError, dp.rhoStar / area);
         data.totalKineticEnergy += 0.5 * mass * p.vel.squaredNorm();
         data.totalPotentialEnergy += gravitySwitch ? mass * gravity.norm() * (p.pos.y() - domainEpsilon) : 0.0;
     }
@@ -121,6 +123,7 @@ void dump() {
     data.kineticEnergy = (scalar*)(rawData + 3 * sizeof(vec) * num_ptcls + 3 * sizeof(scalar) * num_ptcls);
     data.potentialEnergy = (scalar*)(rawData + 3 * sizeof(vec) * num_ptcls + 4 * sizeof(scalar) * num_ptcls);
     data.UIDs = (int64_t*)(rawData + 3 * sizeof(vec) * num_ptcls + 5 * sizeof(scalar) * num_ptcls);
+    data.error = (scalar*)(rawData + 3 * sizeof(vec) * num_ptcls + 5 * sizeof(scalar) * num_ptcls + sizeof(int64_t)*num_ptcls);
 
 
 
@@ -137,6 +140,7 @@ void dump() {
         data.kineticEnergy[i] = 0.5 * mass * p.vel.norm();
         data.potentialEnergy[i] = gravitySwitch ? mass * gravity.norm() * (p.pos.y() - domainEpsilon) : 0.0;
         data.UIDs[i] = p.uid;
+        data.error[i] = dp.rhoStar / area;
     }
 
     std::stringstream sstream;

@@ -647,7 +647,7 @@ void updatePressure(bool density) {
         //pressure = std::max(pressure, speed * speed * rho0);
         di.pressure2 = pressure;
         di.dpdt = std::max(residual, (scalar)-0.001) * area;
-        di.rhoStar = std::max(residual, (scalar)-0.001) * area;
+        di.rhoStar = residual * area;
     }
 }
 scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density) {
@@ -800,10 +800,10 @@ int32_t densitySolve() {
         updatePressure(true);
         error = (scalar)0.0;
         for (auto di : particlesDFSPH)
-            error += di.rhoStar;
+            error += std::max(-0.001 * area,di.rhoStar);
         error /= totalArea;
         // std::cout << "Density: " << counter << " -> " << error << std::endl;
-    } while (counter++ < 255 || (error > (scalar)limit && counter < 255));
+    } while (counter++ < 3 || (error > (scalar)limit && counter < 256));
     computeBoundaryPressure(true);
     computeAcceleration(true);
     updateVelocity();
