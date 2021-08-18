@@ -198,6 +198,13 @@ void externalForces() {
     if (gravitySwitch)
         for (auto& p : particles)
             p.accel += gravity;
+    auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
+    if (scenarioConfig == scenario::lid)
+    for (int32_t i = 0; i < particles.size(); ++i) {
+        auto& p = particles[i];
+        if (p.pos.y() >= domainHeight - domainEpsilon - support * 4.)
+            p.accel.x() = -(p.vel.x() - speed)/ dt / 10.;
+    }
 }
 
 void XSPH() {
@@ -824,6 +831,8 @@ void predictVelocityPCI(bool density) {
     }
 }
 int32_t divergenceSolve() {
+    static auto& active = ParameterManager::instance().get<bool>("dfsph.divergenceSolve");
+    if (!active) return 0;
     //return 0;
     predictVelocity();
     computeAlpha(false);

@@ -177,7 +177,8 @@ void timestep() {
         speed = 0.0;
         once = false;
     }
-    if (t <= 1.0) {
+    //if (t <= 1.0) 
+    {
         speed = speedGoal;
     }
     if (t > 7.0)
@@ -238,6 +239,7 @@ std::vector<Particle> genParticles(vec minCoord, vec maxCoord, scalar packing) {
   auto gen_position = [](auto r, auto i, auto j) -> vec {
     return vec(r * (2.0 * scalar(i) + scalar(j % 2)), r * ::sqrt(3.0) * scalar(j));
   };
+  packing *= 0.9977;
   auto diff = maxCoord - minCoord;
   auto requiredSlices_x = ::ceil(diff.x() / packing);
   auto requiredSlices_y = ::ceil(diff.y() / (::sqrt(3.0) * packing));

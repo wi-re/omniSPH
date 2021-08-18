@@ -232,7 +232,12 @@ void emitParticles() {
     auto m = (domainHeight - 10.0 / domainScale) / 2.0 + domainEpsilon;
     auto t = 12.5 / domainScale;
     auto eps = scale / sqrt(2) * 0.2;
-    auto particlesGen = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 5.0 / domainScale, domainHeight / 2.0 - domainEpsilon - spacing_2D));
+    //auto particlesGen = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 5.0 / domainScale, domainHeight / 2.0 - domainEpsilon - spacing_2D));
+    auto x = 10. / domainScale;
+    auto y = 10. / domainScale;
+    auto xoffset =  -10. / domainScale;
+    auto yoffset = -10. / domainScale;
+    auto particlesGen = genParticles(vec(domainWidth/2. + xoffset, domainHeight/2. + yoffset), vec(domainWidth / 2. + x + xoffset, domainHeight/ 2. + y + yoffset));
     //auto particlesGen = genParticles(vec(15.5 / domainScale, m - t), vec(19.5 / domainScale, m + t));
     for (auto& p : particlesGen) {
         auto [ix, iy] = getCellIdx(p.pos.x(), p.pos.y());
@@ -245,7 +250,7 @@ void emitParticles() {
                 for (auto j : cell) {
                     auto& pj = particles[j];
                     vec r = pj.pos - p.pos;
-                    if (r.squaredNorm() <= 0.5 * 2.0 * 2.0 * packing_2D * packing_2D) {
+                    if (r.squaredNorm() <= 1.5 * 2.0 * 2.0 * packing_2D * packing_2D) {
                         emit = false;
                         //pj.vel = vec(speed, 0.0);
                         //pj.angularVelocity = 0.0;
@@ -334,7 +339,7 @@ void initializeParameters(int32_t scene) {
     ParameterManager::instance().newParameter("vorticity.angularViscosity", 0.005, { .constant = false, .range = Range{0.0, 1.0} });
 
     ParameterManager::instance().newParameter("sim.inletSpeed", 0.0, { .constant = false, .range = Range{0.01,2.00} });
-    ParameterManager::instance().newParameter("sim.inletSpeedGoal", .75, { .constant = false, .range = Range{0.01,2.00} });
+    ParameterManager::instance().newParameter("sim.inletSpeedGoal", 1.5, { .constant = false, .range = Range{0.01,2.00} });
     ParameterManager::instance().newParameter("sim.time", simulationTime, { .constant = true });
     ParameterManager::instance().newParameter("props.numptcls", particles.size(), { .constant = true });
     ParameterManager::instance().newParameter("props.scale", scale, { .constant = true });
@@ -342,7 +347,7 @@ void initializeParameters(int32_t scene) {
     ParameterManager::instance().newParameter("ptcl.radius", radius, { .constant = true });
     ParameterManager::instance().newParameter("sim.minDt", 0.001, { .constant = false, .range = Range{0.0001, 0.016} });
     ParameterManager::instance().newParameter("sim.maxDt", 0.002, { .constant = false, .range = Range{0.0001, 0.016} });
-    ParameterManager::instance().newParameter("sim.barycentricPressure", true, { .constant = false});
+    ParameterManager::instance().newParameter("sim.barycentricPressure", false, { .constant = false});
     ParameterManager::instance().newParameter("sim.dt", dt, { .constant = true });
     ParameterManager::instance().newParameter("props.domainWidth", domainWidth, { .constant = true });
     ParameterManager::instance().newParameter("props.domainHeight", domainHeight, { .constant = true });
@@ -362,10 +367,37 @@ void initializeParameters(int32_t scene) {
     ParameterManager::instance().newParameter("dfsph.divergenceIterations", 0, { .constant = true });
     ParameterManager::instance().newParameter("dfsph.densityError", scalar(0), { .constant = true });
     ParameterManager::instance().newParameter("dfsph.divergenceError", scalar(0), { .constant = true });
+    ParameterManager::instance().newParameter("dfsph.divergenceSolve", true, { .constant = false });
+    switch (scenarioConfig) {
+    case scenario::lid:
+        ParameterManager::instance().get<scalar>("ptcl.viscosityConstant") = 0.05;
+        ParameterManager::instance().get<scalar>("sim.maxDt") = 0.003;
+        ParameterManager::instance().get<scalar>("sim.inletSpeedGoal") = 2.;
+        ParameterManager::instance().get<scalar>("vorticity.nu_t") = 0.146;
+        ParameterManager::instance().get<scalar>("vorticity.angularViscosity") = 0.05;
+        ParameterManager::instance().get<bool>("dfsph.divergenceSolve") = false;
+        ParameterManager::instance().get<std::string>("colorMap.buffer") = "angularVelocity";
+        break;
+    }
 }
 
 void initializeSPH(int32_t scene) {
     triangles.clear();
+    switch (scenarioConfig) {
+    case scenario::lid:
+        inletSwitch = false;
+        outletSwitch = false;
+        gravitySwitch = false;
+        backgroundPressureSwitch = true;
+        break;
+    case scenario::dambreak:
+        inletSwitch = false;
+        outletSwitch = false;
+        gravitySwitch = true;
+        backgroundPressureSwitch = false;
+        break;
+    }
+
     //gravity = vec(0.0,0.0);
     float d = 1.5;
     auto addRect = [&](scalar xmin, scalar ymin, scalar xmax, scalar ymax) {
@@ -653,7 +685,9 @@ void initializeSPH(int32_t scene) {
     //addRect(domainWidth / 2., domainEpsilon, domainWidth / 2. + domainEpsilon*2., domainEpsilon * 4.);
 
     //addRectSub(domainWidth / 2., domainEpsilon, domainWidth / 2. + domainEpsilon * 2., domainEpsilon * 4.,3,3);
-    addRectSubh(domainWidth / 2., domainEpsilon, domainWidth / 2. + domainEpsilon * 2., domainEpsilon * 4., support * 1.5);
+
+    if (scenarioConfig == scenario::dambreak)
+        addRectSubh(domainWidth / 2., domainEpsilon, domainWidth / 2. + domainEpsilon * 2., domainEpsilon * 4., support * 1.5);
 
 
 
@@ -662,6 +696,37 @@ void initializeSPH(int32_t scene) {
                            {domainWidth / 2. + domainEpsilon * 2,   domainEpsilon * 4.},
                            {domainWidth / 2.,                       domainEpsilon * 4.} };
     obstacles.push_back(ObsBoxA);
+
+
+    if (scenarioConfig == scenario::sphere) {
+        scalar rmin = 45. / domainScale;
+        scalar rmax = rmin + support * 2.;
+        vec offset(domainWidth / 2., domainHeight / 2.);
+        auto n = 90;
+        for (scalar r = rmin; r <= rmax; r += support) {
+            auto rp = r + support;
+            for (int32_t i = 0; i < n; ++i) {
+                scalar minAngle = ((scalar)i) / (scalar)(n - 1) * 2. * std::numbers::pi;
+                scalar maxAngle = ((scalar)(i + 1)) / (scalar)(n - 1) * 2. * std::numbers::pi;
+                scalar xmin = cos(minAngle) * r + offset.x();
+                scalar xmax = cos(maxAngle) * r + offset.x();
+                scalar ymin = sin(minAngle) * r + offset.y();
+                scalar ymax = sin(maxAngle) * r + offset.y();
+                triangles.push_back(Triangle{
+                    {cos(minAngle) * r + offset.x(),sin(minAngle) * r + offset.x()},
+                    {cos(minAngle) * rp + offset.x(),sin(minAngle) * rp + offset.x()},
+                    {cos(maxAngle) * rp + offset.x(),sin(maxAngle) * rp + offset.x()} });
+                triangles.push_back(Triangle{
+                    {cos(minAngle) * r + offset.x(),sin(minAngle) * r + offset.x()},
+                    {cos(maxAngle) * rp + offset.x(),sin(maxAngle) * rp + offset.x()},
+                    {cos(maxAngle) * r + offset.x(),sin(maxAngle) * r + offset.x()} });
+
+            }
+        }
+    }
+
+
+
     //obstacles.push_back(ObsStair);
 
     //obstacles.push_back(Upper);
@@ -701,8 +766,18 @@ void initializeSPH(int32_t scene) {
    // auto offset = domainEpsilon / 5;
 
    // auto eps = scale / sqrt(2) * 0.2;
-
-
+    if (scenarioConfig == scenario::dambreak) {
+        addRectSubh(0, domainEpsilon, domainEpsilon, domainHeight, 1.5 * support);
+        addRectSubh(0, 0, domainWidth - domainEpsilon, domainEpsilon, 1.5 * support);
+        addRectSubh(domainWidth - domainEpsilon, 0, domainWidth, domainHeight, 1.5 * support);
+        addRectSubh(domainEpsilon, domainHeight - domainEpsilon, domainWidth - domainEpsilon, domainHeight, 1.5 * support);
+    }
+    if (scenarioConfig == scenario::lid) {
+        addRect(0, domainEpsilon, domainEpsilon, domainHeight);
+        addRect(0, 0, domainWidth - domainEpsilon, domainEpsilon);
+        addRect(domainWidth - domainEpsilon, 0, domainWidth, domainHeight);
+        addRect(domainEpsilon, domainHeight - domainEpsilon, domainWidth - domainEpsilon, domainHeight);
+    }
     if (pc != particleConfig::None) {
         std::vector<Particle> particles5;
         // thin domain
@@ -710,9 +785,15 @@ void initializeSPH(int32_t scene) {
         //case particleConfig::Domain:particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainWidth - domainEpsilon - spacing_2D, domainHeight - domainEpsilon - spacing_2D)); break;
         //case particleConfig::DamBreak:particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 20.0 / domainScale, domainEpsilon + 37.5 / domainScale)); break;
         //}
+        
         //particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 40.0 / domainScale, domainHeight * 3.0 / 5.0));
         // 
+        if(scenarioConfig == scenario::dambreak)
         particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(spacing_2D + domainEpsilon * 10., spacing_2D + domainEpsilon * 15.));
+
+        if(scenarioConfig == scenario::lid)
+        particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainWidth - domainEpsilon, domainHeight - domainEpsilon));
+
        // particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(spacing_2D + domainEpsilon * 2., spacing_2D + domainEpsilon * 2));
         //auto candidates = particles3;
         //if (simulationCase != cornerAngle::Box1 && simulationCase != cornerAngle::Box1_4 && simulationCase != cornerAngle::Box4) {
@@ -797,10 +878,6 @@ void initializeSPH(int32_t scene) {
     //addRect(domainWidth - domainEpsilon, 0, domainWidth, domainHeight);
     //addRect(domainEpsilon, domainHeight-domainEpsilon, domainWidth - domainEpsilon, domainHeight);
     
-    addRectSubh(0, domainEpsilon, domainEpsilon, domainHeight, 0.75 * support);
-    addRectSubh(0, 0, domainWidth - domainEpsilon, domainEpsilon, 0.75 * support);
-    addRectSubh(domainWidth - domainEpsilon, 0, domainWidth, domainHeight, 0.75  * support);
-    addRectSubh(domainEpsilon, domainHeight - domainEpsilon, domainWidth - domainEpsilon, domainHeight, 0.75 * support);
 
     //triangles.push_back(Triangle{ {domainEpsilon,domainEpsilon},{domainWidth- domainEpsilon,domainEpsilon},{domainWidth - domainEpsilon,0} });
     //triangles.push_back(Triangle{ {domainEpsilon,domainEpsilon},{domainWidth - domainEpsilon,0},{domainEpsilon,0} });

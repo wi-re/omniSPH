@@ -38,9 +38,14 @@ inline bool summaryFileOpen = false;
 //constexpr inline scalar packing_2D = (scalar)0.21324955665222379 * scale;
 //constexpr inline scalar spacing_2D = (scalar)0.19775018866158592 * scale;
 
-constexpr inline scalar scale = 0.053294748507066197; // desired particles: 100
+//constexpr inline scalar scale = 0.053294748507066197; // desired particles: 100
+//constexpr inline scalar packing_2D = 0.21410528420968161 * scale; // desired compression: 1
+//constexpr inline scalar spacing_2D = 0.22151327787598094 * scale; // actual delta: 0.35000000000000009
+
+constexpr inline scalar scale = 0.053294748507066197 * 2.; // desired particles: 100
 constexpr inline scalar packing_2D = 0.21410528420968161 * scale; // desired compression: 1
 constexpr inline scalar spacing_2D = 0.22151327787598094 * scale; // actual delta: 0.35000000000000009
+
 
 
 // 0.9990
