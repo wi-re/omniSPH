@@ -9,6 +9,7 @@
 #include <sstream>
 #include <vector>
 #include <fstream>
+#include <numbers>
 
 // comment this line out to use double precision for everything in the simulation
 //#define USE_SINGLE
@@ -37,7 +38,7 @@ inline bool summaryFileOpen = false;
 //constexpr inline scalar packing_2D = (scalar)0.21324955665222379 * scale;
 //constexpr inline scalar spacing_2D = (scalar)0.19775018866158592 * scale;
 
-constexpr inline scalar scale = 0.073294748507066197; // desired particles: 100
+constexpr inline scalar scale = 0.053294748507066197; // desired particles: 100
 constexpr inline scalar packing_2D = 0.21410528420968161 * scale; // desired compression: 1
 constexpr inline scalar spacing_2D = 0.22151327787598094 * scale; // actual delta: 0.35000000000000009
 
@@ -66,7 +67,7 @@ constexpr inline scalar minDt = 0.0001;
 constexpr inline scalar maxDt = 0.002;
 //constexpr inline scalar scale = 1.00;
 constexpr inline scalar scale_2 = 1.4142135623730;
-constexpr inline scalar pi = 3.141592653589793238;
+//constexpr inline scalar pi = 3.141592653589793238;
 
 // parameters for the overall simulation
 // used to define the overall simulation domain (including the outer gap)
@@ -85,8 +86,8 @@ constexpr inline scalar screenScale = 10.0;
 
 inline scalar pointScale = 2.0 * domainScale / 20.0 * 15.0;
 constexpr inline bool dualView = false;
-inline int32_t screenWidth = (int32_t) (domainWidth * screenScale * domainScale);
-inline int32_t screenHeight = (int32_t) (domainHeight * screenScale * domainScale*(dualView ? 2.0 : 1.0));
+inline int32_t screenWidth = (int32_t)(domainWidth * screenScale * domainScale);
+inline int32_t screenHeight = (int32_t)(domainHeight * screenScale * domainScale * (dualView ? 2.0 : 1.0));
 // used to create a gap from the domain to the edge of the window
 constexpr static scalar domainEpsilon = (scalar)5.f / domainScale;
 // used for direct forcing boundaries to reflect the velocity and reduce it's intensity
@@ -98,7 +99,8 @@ constexpr inline std::size_t cellsY = std::size_t(domainHeight / scale);
 inline vec domainMin(domainEpsilon, domainEpsilon);
 inline vec domainMax(domainWidth - domainEpsilon, domainHeight - domainEpsilon);
 // cell grid used for acceleration
-inline std::array<std::vector<int32_t>, cellsX * cellsY> cellArray;
+inline std::array<std::vector<int32_t>, cellsX* cellsY> cellArray;
+inline std::array<std::vector<int32_t>, cellsX* cellsY> cellTriangleArray;
 
 // parameters for particle properties
 // fixed timestep
@@ -107,10 +109,10 @@ inline scalar dt = (scalar)0.0008;
 // 0.21314955649168332
 // 0.21294955649168332
 // fixed particle radius such that H = 1.0
-constexpr inline scalar radius = (scalar)0.22360679774997896 * scale; 
-constexpr inline scalar support = (scalar) scale;
+constexpr inline scalar radius = (scalar)0.22360679774997896 * scale;
+constexpr inline scalar support = (scalar)scale;
 // area determined as pi radius^2
-constexpr inline scalar area = pi * radius * radius;
+constexpr inline scalar area = std::numbers::pi * radius * radius;
 // rest density of water
 constexpr inline scalar rho0 = (scalar)998.0;
 // helper value to simplify some terms
@@ -135,53 +137,57 @@ constexpr inline scalar epsilon((scalar)1e-7);
 // necessary for this simple simulaiton.
 struct Particle {
     Particle(scalar _x, scalar _y) : pos(_x, _y), vel(0.f, 0.f), rho(0) { reset(); }
-  inline void reset() {
-    accel = vec(0, 0);
-    rho = scalar(0.0);
-    neighbors.clear();
-  }
-  vec pos = vec(0, 0);
-  vec vel = vec(0, 0);
-  vec accel = vec(0, 0);
-  scalar rho = scalar(0);
-  std::vector<int32_t> neighbors;
-  scalar vorticity = scalar (0.0);
-  scalar angularVelocity = scalar(0.0);
-  int64_t uid = 0;
+    inline void reset() {
+        accel = vec(0, 0);
+        rho = scalar(0.0);
+        neighbors.clear();
+        neighborTriangles.clear();
+    }
+    vec pos = vec(0, 0);
+    vec vel = vec(0, 0);
+    vec accel = vec(0, 0);
+    scalar rho = scalar(0);
+    std::vector<int32_t> neighbors;
+    std::vector<int32_t> neighborTriangles;
+    scalar vorticity = scalar(0.0);
+    scalar angularVelocity = scalar(0.0);
+    int64_t uid = 0;
 };
 // Structure containing additional quantities required for a DFSPH-like pressure solver
 struct dfsphState {
-  inline void reset() {
-    alpha = 0.0;
-    area = 0.0;
-    vel = vec(0, 0);
-    pressure1 = 0.0;
-    pressure2 = 0.0;
-	pressureBoundary = 0.0;
-    source = 0.0;
-    accel = vec(0, 0);
-    dpdt = rhoStar = 0.0;
-  }
-  scalar alpha = scalar(0);
-  scalar area = scalar(0);
-  scalar pressure1 = scalar(0);
-  scalar pressure2 = scalar(0);
-  scalar pressureBoundary = scalar(0);
-  scalar source = scalar(0);
-  scalar dpdt = scalar(0);
-  scalar rhoStar = scalar(0);
-  vec vel = vec(0, 0);
-  vec accel = vec(0, 0);
-  scalar pressurePrevious = scalar(0);
+    inline void reset() {
+        alpha = 0.0;
+        area = 0.0;
+        vel = vec(0, 0);
+        pressure1 = 0.0;
+        pressure2 = 0.0;
+        pressureBoundary = 0.0;
+        source = 0.0;
+        accel = pos = vec(0, 0);
+        dpdt = rhoStar = 0.0;
+    }
+    scalar alpha = scalar(0);
+    scalar area = scalar(0);
+    scalar pressure1 = scalar(0);
+    scalar pressure2 = scalar(0);
+    scalar pressureBoundary = scalar(0);
+    scalar source = scalar(0);
+    scalar dpdt = scalar(0);
+    scalar rhoStar = scalar(0);
+    vec vel = vec(0, 0);
+    vec accel = vec(0, 0);
+    vec pos = vec(0, 0);
+    scalar pressurePrevious = scalar(0);
 };
 struct Triangle {
-  vec v0 = vec(0, 0), v1 = vec(0, 0), v2 = vec(0, 0);
+    vec v0 = vec(0, 0), v1 = vec(0, 0), v2 = vec(0, 0);
 };
 
 // global simulation state for ease of use
 inline std::vector<Particle> particles;
 inline std::vector<dfsphState> particlesDFSPH;
 inline std::vector<Triangle> triangles;
+inline std::vector<std::tuple<scalar, scalar, scalar>> trianglePressures;
 inline std::vector<vec> polygon;
 inline  std::vector < std::vector<vec>> obstacles;
 inline scalar simulationTime = 0.0;
@@ -205,14 +211,14 @@ scalar toMs(clk::duration dur);
 void emitParticles();
 
 enum struct cornerAngle {
-	acute, ortho, obtuse, nobtuse, northo, nacute, Box4, Box1, Box1_4
+    acute, ortho, obtuse, nobtuse, northo, nacute, Box4, Box1, Box1_4
 };
 enum struct boundaryMethod {
-	analytical, semi, sdf
+    analytical, semi, sdf
 };
 
 constexpr inline cornerAngle simulationCase = cornerAngle::Box4;
-constexpr inline boundaryMethod simulationMethod = boundaryMethod::sdf;
+constexpr inline boundaryMethod simulationMethod = boundaryMethod::analytical;
 
 
 

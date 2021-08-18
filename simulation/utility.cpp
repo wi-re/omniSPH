@@ -44,6 +44,9 @@ std::pair<int32_t, int32_t> getCellIdx(scalar x, scalar y) {
 std::vector<int32_t>& getCell(int32_t xi, int32_t yi) {
     return cellArray[yi * (cellsX)+xi];
 }
+std::vector<int32_t>& getTriangleCell(int32_t xi, int32_t yi) {
+    return cellTriangleArray[yi * (cellsX)+xi];
+}
 
 void fillCells() {
     for (int32_t i = 0; i < particles.size(); ++i)
@@ -68,6 +71,108 @@ void neighborList() {
             }
         }
     }
+
+
+    auto triangleArea = [](Triangle t) {
+        auto [p0, p1, p2] = t;
+        return 0.5 * (-p1[1] * p2[0] + p0[1] * (-p1[0] + p2[0]) + p0[0] * (p1[1] - p2[1]) + p1[0] * p2[1]) + epsilon;
+    };
+    auto pointInTriangle = [triangleArea](vec p, Triangle tri) {
+        auto [p0, p1, p2] = tri;
+        auto area = triangleArea(tri);
+        auto s = 1.0 / (2.0 * area) * (p0[1] * p2[0] - p0[0] * p2[1] + (p2[1] - p0[1]) * p[0] + (p0[0] - p2[0]) * p[1]);
+        auto t = 1.0 / (2.0 * area) * (p0[0] * p1[1] - p0[1] * p1[0] + (p0[1] - p1[1]) * p[0] + (p1[0] - p0[0]) * p[1]);
+        auto u = 1.0 - s - t;
+        if (s > 0.0 && t > 0.0 && u > 0.0) {
+            return 1.0;
+        }
+        if (s >= 0.0 && t >= 0.0 && u >= 0.0) {
+            return 0.0;
+        }
+        return -1.0;
+    };
+    auto pointInCircle = [](vec c, scalar r, vec p) {
+        auto a = p.x() - c.x();
+        auto b = p.y() - c.y();
+        auto ab2 = a * a + b * b;
+        auto r2 = r * r;
+        if (ab2 < r2)
+            return 1.0;
+        if (abs(ab2) / r2 < 1e-11)
+            return 0.0;
+        return -1.0;
+    };
+    auto closestPoint = [](vec P, vec A, vec B, bool clipped) {
+        vec ap = P - A;
+        vec ab = B - A;
+        scalar ab2 = ab.dot(ab) + epsilon;
+        scalar apab = ap.dot(ab);
+        scalar t = apab / ab2;
+        if (clipped)
+            t = std::clamp(t, 0.0, 1.0);
+        return (vec)(A + ab * t);
+    };
+    auto closestPointEdge = [closestPoint](vec c, vec p1, vec p2, vec center, bool check) {
+        auto dC = (p2[1] - p1[1]) * c[0] - (p2[0] - p1[0]) * c[1] + p2[0] * p1[1] - p2[1] * p1[0];
+        auto dT = (p2[1] - p1[1]) * center[0] - (p2[0] - p1[0]) * center[1] + p2[0] * p1[1] - p2[1] * p1[0];
+        if (dC * dT < 0.0 || !check)
+            return closestPoint(c, p1, p2, false);
+        return c;
+    };
+    auto closestPointTriangle = [pointInTriangle, closestPointEdge](vec P, Triangle tri) {
+        if (pointInTriangle(P, tri) >= 0) {
+            auto triCenter0 = (tri.v0 + tri.v1 + tri.v2) / 3.0;
+
+            auto P01 = closestPointEdge(P, tri.v0, tri.v1, triCenter0, false);
+            auto P12 = closestPointEdge(P, tri.v1, tri.v2, triCenter0, false);
+            auto P20 = closestPointEdge(P, tri.v2, tri.v0, triCenter0, false);
+
+            auto d01 = (P01 - P).norm();
+            auto d12 = (P12 - P).norm();
+            auto d20 = (P20 - P).norm();
+            if (d01 <= d12 && d01 <= d20)
+                return std::make_pair(P01, d01);
+            if (d12 <= d01 && d12 <= d20)
+                return std::make_pair(P12, d12);
+            return std::make_pair(P20, d20);
+        }
+        else {
+            auto triCenter0 = (tri.v0 + tri.v1 + tri.v2) / 3.0;
+
+            auto P01 = closestPointEdge(P, tri.v0, tri.v1, triCenter0, true);
+            auto P12 = closestPointEdge(P01, tri.v1, tri.v2, triCenter0, true);
+            auto P20 = closestPointEdge(P12, tri.v2, tri.v0, triCenter0, true);
+
+            auto d01 = (P01 - P).norm();
+            auto d12 = (P12 - P).norm();
+            auto d20 = (P20 - P).norm();
+            return std::make_pair(P20, -d20);
+            if (d01 <= d12 && d01 <= d20)
+                return std::make_pair(P01, d01);
+            if (d12 <= d01 && d12 <= d20)
+                return std::make_pair(P12, d12);
+            return std::make_pair(P20, d20);
+        }
+    };
+
+#pragma omp parallel for
+    for (int32_t i = 0; i < particles.size(); ++i) {
+        auto& p = particles[i];
+        int32_t ti = 0;
+        auto [xi, yi] = getCellIdx(p.pos.x(), p.pos.y());
+        auto triangleList = getTriangleCell(xi, yi);
+        if constexpr (boundaryMethod::analytical == simulationMethod)
+            for (const auto& ti : triangleList) {
+                const auto& t = triangles[ti];
+                auto [cP, d] = closestPointTriangle(p.pos, t);
+                if (d > -support) {
+                    p.neighborTriangles.push_back(ti);
+                }
+            }
+    }
+
+
+
 }
 
 void resetFrame() {
@@ -127,7 +232,7 @@ void emitParticles() {
     auto m = (domainHeight - 10.0 / domainScale) / 2.0 + domainEpsilon;
     auto t = 12.5 / domainScale;
     auto eps = scale / sqrt(2) * 0.2;
-    auto particlesGen = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 5.0 / domainScale, domainHeight - domainEpsilon - spacing_2D));
+    auto particlesGen = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 5.0 / domainScale, domainHeight / 2.0 - domainEpsilon - spacing_2D));
     //auto particlesGen = genParticles(vec(15.5 / domainScale, m - t), vec(19.5 / domainScale, m + t));
     for (auto& p : particlesGen) {
         auto [ix, iy] = getCellIdx(p.pos.x(), p.pos.y());
@@ -184,9 +289,9 @@ void initializeParameters(int32_t scene) {
                 std::string("predictedVelocity"),
                 std::string("pressureAcceleration") };
 
-    ParameterManager::instance().newParameter("colorMap.vectorMode", std::string("magnitude"), { .constant = false 
+    ParameterManager::instance().newParameter("colorMap.vectorMode", std::string("magnitude"), { .constant = false
         });
-    ParameterManager::instance().newParameter("colorMap.buffer", std::string("velocity"), { .constant = false 
+    ParameterManager::instance().newParameter("colorMap.buffer", std::string("velocity"), { .constant = false
         });
 
 
@@ -217,12 +322,12 @@ void initializeParameters(int32_t scene) {
     ParameterManager::instance().newParameter("marching.method", int32_t(0), { .constant = false, .range = Range{0,0} });
     ParameterManager::instance().newParameter("render.showGrid", false, { .constant = false });
 
-    ParameterManager::instance().newParameter("colorMap.min", scalar(-1.5), { .constant = false , .range = Range{-10.0,10.0} });
+    ParameterManager::instance().newParameter("colorMap.min", scalar(0.99), { .constant = false , .range = Range{-10.0,10.0} });
     ParameterManager::instance().newParameter("colorMap.map", 0, { .constant = false , .range = Range{0,3} });
     ParameterManager::instance().newParameter("colorMap.limit", false, { .constant = false });
     ParameterManager::instance().newParameter("colorMap.auto", true, { .constant = false });
 
-    ParameterManager::instance().newParameter("colorMap.max", scalar(1.5), { .constant = false , .range = Range{-10.0,10.0} });
+    ParameterManager::instance().newParameter("colorMap.max", scalar(1.03), { .constant = false , .range = Range{-10.0,10.0} });
 
     ParameterManager::instance().newParameter("vorticity.nu_t", 0.025, { .constant = false, .range = Range{0.0, 1.0} });
     ParameterManager::instance().newParameter("vorticity.inverseInertia", 0.5, { .constant = false, .range = Range{0.0, 1.0} });
@@ -236,7 +341,8 @@ void initializeParameters(int32_t scene) {
     ParameterManager::instance().newParameter("ptcl.render", true, { .constant = false });
     ParameterManager::instance().newParameter("ptcl.radius", radius, { .constant = true });
     ParameterManager::instance().newParameter("sim.minDt", 0.001, { .constant = false, .range = Range{0.0001, 0.016} });
-    ParameterManager::instance().newParameter("sim.maxDt", 0.001, { .constant = false, .range = Range{0.0001, 0.016} });
+    ParameterManager::instance().newParameter("sim.maxDt", 0.002, { .constant = false, .range = Range{0.0001, 0.016} });
+    ParameterManager::instance().newParameter("sim.barycentricPressure", true, { .constant = false});
     ParameterManager::instance().newParameter("sim.dt", dt, { .constant = true });
     ParameterManager::instance().newParameter("props.domainWidth", domainWidth, { .constant = true });
     ParameterManager::instance().newParameter("props.domainHeight", domainHeight, { .constant = true });
@@ -262,6 +368,35 @@ void initializeSPH(int32_t scene) {
     triangles.clear();
     //gravity = vec(0.0,0.0);
     float d = 1.5;
+    auto addRect = [&](scalar xmin, scalar ymin, scalar xmax, scalar ymax) {
+        triangles.push_back(Triangle{ {xmin,ymin},{xmax,ymax},{xmin,ymax} });
+        triangles.push_back(Triangle{ {xmin,ymin},{xmax,ymin},{xmax,ymax} });
+
+    };
+    auto addRectSub = [&](scalar xmin, scalar ymin, scalar xmax, scalar ymax, int32_t nx, int32_t ny) {
+        if (nx == ny && (nx == 1 || ny == 2)) {
+            triangles.push_back(Triangle{ {xmin,ymin},{xmax,ymax},{xmin,ymax} });
+            triangles.push_back(Triangle{ {xmin,ymin},{xmax,ymin},{xmax,ymax} });
+            return;
+        }
+        auto dx = (xmax - xmin) / (scalar)(nx - 1);
+        auto dy = (ymax - ymin) / (scalar)(ny - 1);
+        for (int32_t i = 0; i < nx - 1; ++i) {
+            auto xn = xmin + dx * (scalar)(i + 0);
+            auto xp = xmin + dx * (scalar)(i + 1);
+            for (int32_t j = 0; j < ny - 1; ++j) {
+                auto yn = ymin + dy * (scalar)(j + 0);
+                auto yp = ymin + dy * (scalar)(j + 1);
+                addRect(xn, yn, xp, yp);
+            }
+        }
+
+    };
+    auto addRectSubh = [&](scalar xmin, scalar ymin, scalar xmax, scalar ymax, scalar lim) {
+        auto nx = (int32_t) ::ceil((xmax - xmin) / lim);
+        auto ny = (int32_t) ::ceil((ymax - ymin) / lim);
+        addRectSub(xmin, ymin, xmax, ymax, nx + 1, ny+1);
+    };
 
     //switch (simulationCase) {
     //case cornerAngle::acute:
@@ -496,10 +631,37 @@ void initializeSPH(int32_t scene) {
                            {left + width, domainHeight - domainEpsilon - 1.5 * height},
                            {left, domainHeight - domainEpsilon - height} };
 
-    std::vector<vec> ObsStair{ {domainEpsilon,domainHeight/5.0},
+    std::vector<vec> ObsStair{ {domainEpsilon,domainHeight / 5.0},
                            {domainEpsilon + 75.0 / domainScale, domainHeight / 5.0},
                            {domainEpsilon + 75.0 / domainScale, domainHeight / 5.0 - 2.5 * scale},
                            {domainEpsilon, domainHeight / 5.0 - 2.5 * scale} };
+
+
+    auto addRect2 = [addRect](std::vector<vec> obs) {
+        auto xmin = DBL_MAX, xmax = -DBL_MAX;
+        auto ymin = DBL_MAX, ymax = -DBL_MAX;
+        xmin = std::min(std::min(std::min(obs[0].x(), obs[1].x()), obs[2].x()), obs[3].x());
+        xmax = std::max(std::max(std::max(obs[0].x(), obs[1].x()), obs[2].x()), obs[3].x());
+        ymin = std::min(std::min(std::min(obs[0].y(), obs[1].y()), obs[2].y()), obs[3].y());
+        ymax = std::max(std::max(std::max(obs[0].y(), obs[1].y()), obs[2].y()), obs[3].y());
+        addRect(xmin, ymin, xmax, ymax);
+    };
+    //addRect2(ObsT2);
+
+
+
+    //addRect(domainWidth / 2., domainEpsilon, domainWidth / 2. + domainEpsilon*2., domainEpsilon * 4.);
+
+    //addRectSub(domainWidth / 2., domainEpsilon, domainWidth / 2. + domainEpsilon * 2., domainEpsilon * 4.,3,3);
+    addRectSubh(domainWidth / 2., domainEpsilon, domainWidth / 2. + domainEpsilon * 2., domainEpsilon * 4., support * 1.5);
+
+
+
+    std::vector<vec> ObsBoxA{ {domainWidth / 2.,                     domainEpsilon},
+                           {domainWidth / 2. + domainEpsilon * 2,   domainEpsilon},
+                           {domainWidth / 2. + domainEpsilon * 2,   domainEpsilon * 4.},
+                           {domainWidth / 2.,                       domainEpsilon * 4.} };
+    obstacles.push_back(ObsBoxA);
     //obstacles.push_back(ObsStair);
 
     //obstacles.push_back(Upper);
@@ -548,7 +710,10 @@ void initializeSPH(int32_t scene) {
         //case particleConfig::Domain:particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainWidth - domainEpsilon - spacing_2D, domainHeight - domainEpsilon - spacing_2D)); break;
         //case particleConfig::DamBreak:particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 20.0 / domainScale, domainEpsilon + 37.5 / domainScale)); break;
         //}
-        particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 40.0 / domainScale, domainHeight * 3.0 / 5.0));
+        //particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 40.0 / domainScale, domainHeight * 3.0 / 5.0));
+        // 
+        particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(spacing_2D + domainEpsilon * 10., spacing_2D + domainEpsilon * 15.));
+       // particles5 = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(spacing_2D + domainEpsilon * 2., spacing_2D + domainEpsilon * 2));
         //auto candidates = particles3;
         //if (simulationCase != cornerAngle::Box1 && simulationCase != cornerAngle::Box1_4 && simulationCase != cornerAngle::Box4) {
         //    candidates = particles3;
@@ -626,11 +791,43 @@ void initializeSPH(int32_t scene) {
     //    }
 
     //}
-    //triangles.push_back(Triangle{ {5,5},{95,5},{95,0} });
-    //triangles.push_back(Triangle{ {5,5},{95,0},{5,0} });
-    //triangles.push_back(Triangle{ {0,0},{0,50},{5,50} });
-    //triangles.push_back(Triangle{ {0,0},{5,50},{5,0} });
+
+    //addRect(0, 0, domainEpsilon, domainHeight);
+    //addRect(domainEpsilon, 0, domainWidth - domainEpsilon, domainEpsilon);
+    //addRect(domainWidth - domainEpsilon, 0, domainWidth, domainHeight);
+    //addRect(domainEpsilon, domainHeight-domainEpsilon, domainWidth - domainEpsilon, domainHeight);
+    
+    addRectSubh(0, domainEpsilon, domainEpsilon, domainHeight, 0.75 * support);
+    addRectSubh(0, 0, domainWidth - domainEpsilon, domainEpsilon, 0.75 * support);
+    addRectSubh(domainWidth - domainEpsilon, 0, domainWidth, domainHeight, 0.75  * support);
+    addRectSubh(domainEpsilon, domainHeight - domainEpsilon, domainWidth - domainEpsilon, domainHeight, 0.75 * support);
+
+    //triangles.push_back(Triangle{ {domainEpsilon,domainEpsilon},{domainWidth- domainEpsilon,domainEpsilon},{domainWidth - domainEpsilon,0} });
+    //triangles.push_back(Triangle{ {domainEpsilon,domainEpsilon},{domainWidth - domainEpsilon,0},{domainEpsilon,0} });
+    //triangles.push_back(Triangle{ {0,0},{0,domainHeight},{domainEpsilon,domainHeight} });
+    //triangles.push_back(Triangle{ {0,0},{domainEpsilon,domainHeight},{domainEpsilon,0} });
+
+    //triangles.push_back(Triangle{ {domainWidth - domainEpsilon,0},{0,domainHeight},{domainEpsilon,domainHeight} });
+    //triangles.push_back(Triangle{ {0,0},{domainEpsilon,domainHeight},{domainEpsilon,0} });
 
 
+    for (int32_t i = 0; i < triangles.size(); ++i) {
+        const auto& t = triangles[i];
+        scalar xmin = std::min(std::min(t.v0.x(), t.v1.x()), t.v2.x()) - support;
+        scalar xmax = std::max(std::max(t.v0.x(), t.v1.x()), t.v2.x()) + support;
+        scalar ymin = std::min(std::min(t.v0.y(), t.v1.y()), t.v2.y()) - support;
+        scalar ymax = std::max(std::max(t.v0.y(), t.v1.y()), t.v2.y()) + support;
 
+        auto [xmi, ymi] = getCellIdx(xmin, ymin);
+        auto [xma, yma] = getCellIdx(xmax, ymax);
+        for (int32_t x = xmi; x <= xma; ++x) {
+            for (int32_t y = ymi; y <= yma; ++y) {
+                getTriangleCell(x, y).push_back(i);
+            }
+        }
+
+
+        //cellTriangleArray
+    }
+    trianglePressures.resize(triangles.size());
 }

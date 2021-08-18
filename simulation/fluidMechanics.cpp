@@ -20,7 +20,7 @@ void density() {
             pi.rho += area * W(pi.pos, pj.pos);
         }
         //pi.rho = std::max(pi.rho, 0.5);
-        boundaryFunc(pi.pos, [&pi, i](auto bpos, auto d, auto k, auto gk, auto triangle) {
+        boundaryFunc(pi, [&pi, i](auto bpos, auto d, auto k, auto gk, auto triangle) {
             //std::cout << i << " - " << pi.pos.x() << " : " << pi.pos.y() << " -> " << bpos.x() << " : " << bpos.y() << ", " << d << ", " << k << ", " << gk.x() << " : " << gk.y() << std::endl;
             pi.rho += k; });
 
@@ -557,7 +557,7 @@ void Integrate(void) {
 }
 #include <iomanip>
 
-void computeAlpha(bool density ) {
+void computeAlpha(bool density) {
 #pragma omp parallel for
     for (int32_t i = 0; i < particles.size(); ++i) {
         auto& pi = particles[i];
@@ -565,7 +565,7 @@ void computeAlpha(bool density ) {
         vec kernelSum1(0, 0);
         scalar kernelSum2 = 0.0;
         if (density)
-            boundaryFunc(pi.pos, [&pi, &kernelSum1, &kernelSum2](auto bpos, auto d, auto k, auto gk, auto triangle) { kernelSum1 += gk; });
+            boundaryFunc(pi, [&pi, &kernelSum1, &kernelSum2](auto bpos, auto d, auto k, auto gk, auto triangle) { kernelSum1 += gk; });
         for (int32_t j : pi.neighbors) {
             auto& pj = particles[j];
             auto& dj = particlesDFSPH[j];
@@ -575,7 +575,7 @@ void computeAlpha(bool density ) {
         }
         di.alpha = -dt * dt * di.area / mass * kernelSum1.dot(kernelSum1) - dt * dt * di.area * kernelSum2;
         if (std::abs(di.alpha) > 1.0) {
-            boundaryFunc(pi.pos, [&pi, &kernelSum1, &kernelSum2](auto pb, auto d, auto k, auto gk, auto triangle) {
+            boundaryFunc(pi, [&pi, &kernelSum1, &kernelSum2](auto pb, auto d, auto k, auto gk, auto triangle) {
                 kernelSum1 += gk;
                 if (triangle)
                     std::cout << "Triangle:" << std::endl;
@@ -592,7 +592,7 @@ void computeSourceTerm(bool density) {
         auto& di = particlesDFSPH[i];
         scalar sourceTerm = density ? scalar(1.0) - pi.rho : scalar(0.0);
         if (density)
-            boundaryFunc(pi.pos, [&di, &sourceTerm](auto bpos, auto d, auto k, auto gk, auto triangle) {
+            boundaryFunc(pi, [&di, &sourceTerm](auto bpos, auto d, auto k, auto gk, auto triangle) {
             sourceTerm = sourceTerm - dt * di.vel.dot(gk);
                 });
         for (int32_t j : pi.neighbors) {
@@ -628,7 +628,7 @@ void updatePressure(bool density) {
         auto& di = particlesDFSPH[i];
         scalar kernelSum = (scalar)0.0;
         if (density)
-            boundaryFunc(pi.pos,
+            boundaryFunc(pi,
                 [&di, &kernelSum](auto bpos, auto d, auto k, auto gk, auto triangle) { kernelSum += dt * dt * di.accel.dot(gk); });
         for (int32_t j : pi.neighbors) {
             auto& pj = particles[j];
@@ -655,26 +655,32 @@ scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density) {
     matrix M = matrix::Zero();
     scalar sumA = (scalar)0.0, sumB = (scalar)0.0, d_sum = (scalar)0.0;
 
+    int32_t ii = 0;
     auto [ix, iy] = getCellIdx(pb.x(), pb.y());
     for (int32_t xi = -1; xi <= 1; ++xi) {
         for (int32_t yi = -1; yi <= 1; ++yi) {
+            if (xi + ix < 0 || xi + ix >= cellsX) continue;
+            if (yi + iy < 0 || yi + iy >= cellsY) continue;
             const auto& cell = getCell(ix + xi, iy + yi);
             for (auto j : cell) {
                 auto& pj = particles[j];
                 vec r = pj.pos - pb;
                 if (r.squaredNorm() <= support * support) {
+                    ii++;
                     scalar fac = area * W(pj.pos, pb);
                     d_bar += pj.pos * fac;
                     d_sum += fac;
                 }
             }
         }
-    }
+    }if (ii == 0) return 0.;
     d_bar /= d_sum;
     vec x_b = pb - d_bar;
-
+    //std::cout << "---------------------\n";
     for (int32_t xi = -1; xi <= 1; ++xi) {
         for (int32_t yi = -1; yi <= 1; ++yi) {
+            if (xi + ix < 0 || xi + ix >= cellsX) continue;
+            if (yi + iy < 0 || yi + iy >= cellsY) continue;
             const auto& cell = getCell(ix + xi, iy + yi);
             for (auto j : cell) {
                 auto& pj = particles[j];
@@ -700,6 +706,8 @@ scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density) {
     auto beta = Mp(0, 0) * vecSum.x() + Mp(0, 1) * vecSum.y();
     auto gamma = Mp(1, 0) * vecSum.x() + Mp(1, 1) * vecSum.y();
     scalar det = M.determinant();
+    std::cout << std::defaultfloat;
+   // std::cout << alpha << " " << beta << " " << gamma << " [ " << Mp(0, 0) << " " << Mp(0, 1) << " ] [ " << Mp(1, 0) << " " << Mp(1, 1) << " ] " << " " << det << " " << x_b.x() << " " << x_b.y() << "\n";
     if (det != det)
         beta = gamma = (scalar)0.0;
     auto pressure = alpha + beta * x_b.x() + gamma * x_b.y();
@@ -710,7 +718,21 @@ scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density) {
       //  printParticle(i);
     return pressure;
 }
+void computeBoundaryTrianglePressure(bool density) {
+    static auto& baryPressure = ParameterManager::instance().get<bool>("sim.barycentricPressure");
+    if (!baryPressure) return;
+#pragma omp parallel for
+    for (int32_t i = 0; i < triangles.size(); ++i) {
+        const auto [t0, t1, t2] = triangles[i];
+        auto f0 = calculateBoundaryPressureMLS(-1, t0, true);
+        auto f1 = calculateBoundaryPressureMLS(-1, t1, true);
+        auto f2 = calculateBoundaryPressureMLS(-1, t2, true);
+        trianglePressures[i] = std::make_tuple(f0, f1, f2);
+    }
+
+}
 void computeBoundaryPressure(bool density) {
+    static auto& baryPressure = ParameterManager::instance().get<bool>("sim.barycentricPressure");
 #pragma omp parallel for
     for (int32_t i = 0; i < particles.size(); ++i) {
         auto& pi = particles[i];
@@ -719,19 +741,58 @@ void computeBoundaryPressure(bool density) {
         di.accel = vec(0, 0);
         if (!density)
             continue;
-        boundaryFunc(pi.pos, [&](auto pb, auto d, auto k, auto gk, auto triangle) {
-            scalar pressure = calculateBoundaryPressureMLS(i, pb, density);
-            scalar fluidPressure = density ? std::max((scalar)0.0, di.pressure2) : di.pressure2;
-            scalar boundaryPressure = density ? std::max((scalar)0.0, pressure) : pressure;
-            // boundaryPressure = fluidPressure;
-            di.pressureBoundary += boundaryPressure;
-            di.accel +=
-                -scalar(1.0) * rho0 * (fluidPressure / power(pi.rho * rho0, 2) + boundaryPressure / (rho0 * rho0)) * gk;
-            if (boundaryPressure > 1e12 && triangle) {
-                std::cout << pi.pos.x() << " : " << pi.pos.y() << " -> " << pb.x() << " : " << pb.y() << " @ " << d << " => " << d << ", " << k << " ==> " << gk.x() << " : " << gk.y() << std::endl;
-                printParticle(i);
+
+        if (baryPressure) {
+            for (auto ti : pi.neighborTriangles) {
+                const auto& tri = triangles[ti];
+                auto [f0, f1, f2] = trianglePressures[ti];
+                scalar fluidPressure = density ? std::max((scalar)0.0, di.pressure2) : di.pressure2;
+                auto [pb, d] = closestPointTriangle(pi.pos, tri);
+                scalar pressure = calculateBoundaryPressureMLS(0, pb, density);
+                //f0 = f1 = f2 = pressure;
+                //f0 = std::max(f0,std::max(f1, f2));
+                //f1 = f2 = f0;
+                auto [hit, pb2, d2, k, gk] = interactTriangleBaryCentric(pi.pos, tri, pi.rho * rho0, fluidPressure, f0, f1, f2);
+                //auto [hit2, pb3, d3, k3, gk3] = interactTriangle(pi.pos, tri);
+
+
+                if (hit) {
+                    //auto [hit, pb, d, k2, gk2] = interactTriangleBaryCentric(pi.pos, tri, pi.rho * rho0, fluidPressure, pressure, pressure, pressure);
+                    //std::cout << "Hit Triangle!!!!\n\n\n\n";
+                    //if (std::abs(gk.norm() - gk2.norm())>1e-2)
+                    //{
+                    //    std::cout << "\n";
+                    //    std::cout << std::setprecision(5) << f0 << " " << f1 << " " << f2 << " -> " << pressure << " => " << k << " @ [ " << gk.x() << " " << gk.y() << "] : " << k3 << " @ [ " << gk3.x() << " " << gk3.y() << "] : ";
+                    //    std::cout << k2 << " @ [ " << gk2.x() << " " << gk2.y() << "] \n";
+                    //}
+                    di.accel += -scalar(1.0) * gk;
+                }
+                //if (f0 > 1e12 || f1 > 1e12 || f2 > 1e12) {
+                //    std::cout << std::defaultfloat;
+                //    std::cout << "\n\n";
+                //    std::cout << f0 << " " << f1 << " " << f2 << " - " << fluidPressure << std::endl;
+                //    std::cout << pi.pos.x() << " : " << pi.pos.y() << " -> " << pb.x() << " : " << pb.y() << " @ " << d << " => " << d << ", " << k << " ==> " << gk.x() << " : " << gk.y() << std::endl;
+                //    printParticle(i);
+                //}
+
+                di.pressureBoundary += f0 + f1 + f2;
             }
-            });
+        }
+        else {
+            boundaryFunc(pi, [&](auto pb, auto d, auto k, auto gk, auto triangle) {
+                scalar pressure = calculateBoundaryPressureMLS(i, pb, density);
+                scalar fluidPressure = density ? std::max((scalar)0.0, di.pressure2) : di.pressure2;
+                scalar boundaryPressure = density ? std::max((scalar)0.0, pressure) : pressure;
+                // boundaryPressure = fluidPressure;
+                di.pressureBoundary += boundaryPressure;
+                di.accel +=
+                    -scalar(1.0) * rho0 * (fluidPressure / power(pi.rho * rho0, 2) + boundaryPressure / (rho0 * rho0)) * gk;
+                if (boundaryPressure > 1e12 && triangle) {
+                    std::cout << pi.pos.x() << " : " << pi.pos.y() << " -> " << pb.x() << " : " << pb.y() << " @ " << d << " => " << d << ", " << k << " ==> " << gk.x() << " : " << gk.y() << std::endl;
+                    printParticle(i);
+                }
+                });
+        }
     }
 }
 void predictVelocity(bool density) {
@@ -743,7 +804,7 @@ void predictVelocity(bool density) {
         di.area = area / pi.rho;
     }
 }
-void updateVelocity(bool density ) {
+void updateVelocity(bool density) {
 #pragma omp parallel for
     for (int32_t i = 0; i < particles.size(); ++i) {
         auto& pi = particles[i];
@@ -751,7 +812,16 @@ void updateVelocity(bool density ) {
         pi.accel += di.accel;
         di.vel += dt * di.accel;
     }
-
+}
+void predictVelocityPCI(bool density) {
+#pragma omp parallel for
+    for (int32_t i = 0; i < particles.size(); ++i) {
+        auto& pi = particles[i];
+        auto& di = particlesDFSPH[i];
+        di.vel = pi.vel + dt * pi.accel + dt * di.accel;
+        di.pos = pi.pos + dt * di.vel;
+        di.area = area / pi.rho;
+    }
 }
 int32_t divergenceSolve() {
     //return 0;
@@ -766,6 +836,7 @@ int32_t divergenceSolve() {
     static auto& counter = ParameterManager::instance().get<int32_t>("dfsph.divergenceIterations");
     counter = 0;
     do {
+        //computeBoundaryTrianglePressure(false);
         computeBoundaryPressure(false);
         computeAcceleration(false);
         updatePressure(false);
@@ -780,7 +851,83 @@ int32_t divergenceSolve() {
     updateVelocity(false);
     return counter;
 }
+void predictDensity() {
+#pragma omp parallel for
+    for (int32_t i = 0; i < particles.size(); ++i) {
+        auto& pi = particles[i];
+        auto& di = particlesDFSPH[i];
+        auto [ix, iy] = getCellIdx(di.pos.x(), di.pos.y());
+        di.rhoStar = 0.;
+        for (int32_t xi = -2; xi <= 2; ++xi) {
+            for (int32_t yi = -2; yi <= 2; ++yi) {
+                const auto& cell = getCell(ix + xi, iy + yi);
+                for (auto j : cell) {
+                    auto& pj = particlesDFSPH[j];
+                    vec r = pj.pos - di.pos;
+                    if (r.squaredNorm() <= support * support)
+                        di.rhoStar += area * W(pi.pos, pj.pos);
+                }
+            }
+        }
+        //pi.rho = std::max(pi.rho, 0.5);
+        boundaryFunc(di.pos, [&di, i](auto bpos, auto d, auto k, auto gk, auto triangle) {
+            //std::cout << i << " - " << pi.pos.x() << " : " << pi.pos.y() << " -> " << bpos.x() << " : " << bpos.y() << ", " << d << ", " << k << ", " << gk.x() << " : " << gk.y() << std::endl;
+            di.rhoStar += k; });
+        di.dpdt = di.rhoStar - 1.;
+    }
+}
+void updatePressurePCI() {
+    auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
+#pragma omp parallel for
+    for (int32_t i = 0; i < particles.size(); ++i) {
+        auto& pi = particles[i];
+        auto& di = particlesDFSPH[i];
+
+        auto delta = 0x1.41719825bf00dp-32;
+        auto beta = dt * dt * area * area * 2.;
+        auto pressure = rho0 * (di.rhoStar - 1.0) * delta / beta;
+        pressure = std::max(0., pressure);
+        di.pressure1 += pressure;
+        di.pressure2 = di.pressure1;
+    }
+
+}
+int32_t PCISPH() {
+    static auto& limit = ParameterManager::instance().get<scalar>("dfsph.densityEta");
+    static auto& error = ParameterManager::instance().get<scalar>("dfsph.densityError");
+    static auto& counter = ParameterManager::instance().get<int32_t>("dfsph.densityIterations");
+    scalar totalArea = (scalar)particles.size();
+    counter = 0;
+    for (auto& dp : particlesDFSPH) {
+        dp.pressure1 = dp.pressure2 = 0.;
+    }
+
+    do {
+        computeBoundaryPressure(true);
+        computeAcceleration(true);
+        predictVelocityPCI(true);
+        predictDensity();
+
+        updatePressurePCI();
+
+
+
+
+        error = (scalar)0.0;
+        for (auto di : particlesDFSPH)
+            error += std::max(-0.005, di.dpdt);
+        error /= totalArea;
+        //std::cout << "Density: " << counter << " -> " << std::defaultfloat << error << std::endl;
+    } while (counter++ < 3 || (error > (scalar)limit * 10. && counter < 32));
+    computeBoundaryPressure(true);
+    computeAcceleration(true);
+    updateVelocity();
+
+    return counter;
+}
+
 int32_t densitySolve() {
+    // return PCISPH();
     predictVelocity();
     computeAlpha(true);
     computeSourceTerm(true);
@@ -795,12 +942,13 @@ int32_t densitySolve() {
     static auto& counter = ParameterManager::instance().get<int32_t>("dfsph.densityIterations");
     counter = 0;
     do {
+        computeBoundaryTrianglePressure(true);
         computeBoundaryPressure(true);
         computeAcceleration(true);
         updatePressure(true);
         error = (scalar)0.0;
         for (auto di : particlesDFSPH)
-            error += std::max(-0.001 * area,di.rhoStar);
+            error += std::max(-0.001 * area, di.rhoStar);
         error /= totalArea;
         // std::cout << "Density: " << counter << " -> " << error << std::endl;
     } while (counter++ < 3 || (error > (scalar)limit && counter < 256));

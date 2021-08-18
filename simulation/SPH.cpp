@@ -168,7 +168,7 @@ void dump() {
 
 
 void timestep() {
-    dt = 0.002;
+    //dt = 0.002;
     auto& speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
     auto speedGoal = ParameterManager::instance().get<scalar>("sim.inletSpeedGoal");
     static auto& t = ParameterManager::instance().get<scalar>("sim.time");
@@ -196,7 +196,7 @@ void timestep() {
         TIME_CODE(9, "Simulation - XSPH", XSPH());
         TIME_CODE(10, "Simulation - Vorticity", refineVorticity());
         TIME_CODE(11, "Simulation - Integration", Integrate());
-        TIME_CODE(12, "Simulation - Dump", dump());
+        //TIME_CODE(12, "Simulation - Dump", dump());
         TIME_CODE(13, "Simulation - Emission", emitParticles());
     );
 

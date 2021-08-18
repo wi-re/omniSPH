@@ -24,6 +24,7 @@ BOOL CtrlHandler(DWORD fdwCtrlType) {
 #include <cheb/cheb.h>
 #include <iomanip>
 
+#include <tools/Timer.h>
 
 scalar sdpolygon2(std::vector<vec> v, vec p) {
     scalar d = (p - v[0]).dot(p - v[0]);
@@ -167,7 +168,29 @@ int main(int argc, char* argv[])
     //return 0;
 
 
+    {
+        cheb::scalar termb = 0.0;
+        vec terma(0, 0);
+        scalar rho = 0.0;
+        for (int32_t i = -5; i <= 5; ++i) {
+            for (int32_t j = -5; j <= 5; ++j) {
+                cheb::scalar x = packing_2D * (2.0 * (cheb::scalar)i + (cheb::scalar)(j % 2));
+                cheb::scalar y = packing_2D * std::sqrt(3.0) * cheb::scalar(j);
+                cheb::scalar dist = std::sqrt(x * x + y * y);
+                cheb::scalar q = dist / std::sqrt(20.0 / M_PI);
 
+                auto grad = gradW(vec(0, 0), vec(x, y));
+                auto k = W(vec(0, 0), vec(x, y));
+                rho += area * k;
+                terma += grad;
+                termb += grad.dot(grad);
+                std::cout << "\t" << x << " " << y << " -> " << grad.x() << " x " << grad.y() << std::endl;
+            }
+        }
+
+        auto delta = 1. / (+terma.dot(terma) + termb);
+        std::cout << std::defaultfloat << "[ " << terma.x() << " " << terma.y() << " ]  - " << termb << " => " << delta << " @ " << rho << " -> " << std::hexfloat << delta << std::endl;
+    }
 
 
     //cheb::Function testFn([](cheb::scalar s) {
@@ -203,6 +226,20 @@ int main(int argc, char* argv[])
     gui.initSimulation();
     gui.initGL();
     gui.renderLoop();
+
+
+    for (auto tptr : TimerManager::getTimers()) {
+        auto& t = *tptr;
+        auto stats = t.getStats().value();
+        scalar sum = 0.;
+        for (auto s : t.getSamples()) {
+            sum += s;
+        }
+        std::cout << std::setprecision(4);
+        std::cout << t.getDecriptor() << ": " << stats.median << "ms / " << stats.avg << "ms @ " << stats.stddev << " : " << stats.min << "ms / " << stats.max << "ms, total: " << sum/1000. << "s\n";
+
+    }
+
     return 0;
 }
 //CATCH_DEFAULT

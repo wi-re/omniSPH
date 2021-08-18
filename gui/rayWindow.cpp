@@ -29,7 +29,7 @@ void GUI::RayWindow(bool* p_open) {
     if (dir.norm() > 1e-5)
         dir.normalize();
     auto degToRad = [](auto angle) {
-        return angle / 360.f * pi * 2.f;
+        return angle / 360.f * std::numbers::pi * 2.f;
     };
     glm::vec2 origin(orig.x(), orig.y());
     glm::vec2 direction(dir.x(), dir.y());

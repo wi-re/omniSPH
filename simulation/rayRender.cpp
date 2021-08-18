@@ -901,7 +901,7 @@ std::pair<bool, glm::vec2> intersectChebyshev(glm::vec2 origin, glm::vec2 direct
 	} while (true);
 	return std::make_pair(false, glm::vec2(0, 0));
 }
-
+#include <numbers>
 void renderRays() {
 	static auto& renderI = ParameterManager::instance().get<bool>("ray.renderImplicit");
 	static auto& renderE = ParameterManager::instance().get<bool>("ray.renderExplicit");
@@ -923,7 +923,7 @@ void renderRays() {
 		dir.normalize();
 
 	auto degToRad = [](auto angle) {
-		return angle / 360.f * pi * 2.f;
+		return angle / 360.f * std::numbers::pi * 2.f;
 	};
 	glm::vec2 origin(orig.x(), orig.y());
 	glm::vec2 direction(dir.x(), dir.y());
