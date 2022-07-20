@@ -1,7 +1,6 @@
 #include <simulation/SPH.h>
 
 #include <cfloat>
-#include <filesystem>
 #include <tools/timer.h>
 
 struct simulationData {
@@ -36,7 +35,6 @@ if(lastExport == 0) lastExport = -interval;
     if(!pm.get<bool>("export.active")) return;
 
    if (pm.get<int32_t>("sim.frame") == 0) return;
-   namespace fs = std::filesystem;
    fs::path basePath = fs::current_path() / "data";
 
 
@@ -359,8 +357,7 @@ for(int32_t c = 0; c < cellsX * cellsY; ++c){
 
 
 
-std::filesystem::path expand(std::filesystem::path in) {
-  namespace fs = std::filesystem;
+fs::path expand(fs::path in) {
 #ifndef _WIN32
   if (in.string().size() < 1)
     return in;
@@ -398,8 +395,7 @@ std::filesystem::path expand(std::filesystem::path in) {
 #endif
 }
 
-std::filesystem::path SPHSimulation::resolveFile(std::string fileName, std::vector<std::string> search_paths){
-  namespace fs = std::filesystem;
+fs::path SPHSimulation::resolveFile(std::string fileName, std::vector<std::string> search_paths){
   fs::path working_dir = pm.get<std::string>("internal.working_directory");
   fs::path source_dir = pm.get<std::string>("internal.source_directory");
   fs::path build_dir = pm.get<std::string>("internal.build_directory");

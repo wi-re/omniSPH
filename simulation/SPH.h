@@ -81,7 +81,7 @@ struct gravitySource{
 };
 
 class SPHSimulation{
-    std::filesystem::path actualPath;
+    fs::path actualPath;
     bool initDump = false;
     int32_t exportFrameCounter = 0;
     int32_t lastExport = 0.;
@@ -187,6 +187,6 @@ public:
    
     ParameterManager pm;
 
-    std::filesystem::path resolveFile(std::string fileName, std::vector<std::string> search_paths = {});
+    fs::path resolveFile(std::string fileName, std::vector<std::string> search_paths = {});
 };
 inline SPHSimulation simulationState;

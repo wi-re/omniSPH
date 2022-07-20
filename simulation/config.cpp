@@ -1,4 +1,5 @@
 #include <simulation/SPH.h>
+#include <tools/ParameterManager.h>
 #include <config/config.h>
 #include <yaml-cpp/yaml.h>
 #include "2DMath.h"
@@ -29,7 +30,7 @@ struct convert<vec> {
 }
 
 void SPHSimulation::initializeParameters(){
-  auto working_directory = std::filesystem::current_path(); 
+  auto working_directory = fs::current_path(); 
 
   pm.newParameter("internal.working_directory", std::string(working_directory.string()), {.constant = true});
   pm.newParameter("internal.source_directory", std::string(sourceDirectory), {.constant = true});
@@ -75,12 +76,12 @@ void SPHSimulation::initializeParameters(){
 
     static auto cMapPresets = std::vector<std::string>{[this]() {
     std::vector<std::string> colorMaps;
-    auto f = std::filesystem::path(pm.get<std::string>("stylePath"));
+    auto f = fs::path(pm.get<std::string>("stylePath"));
     auto p = f.parent_path().string();
     if (*(p.end() - 1) == '/' || *(p.end() - 1) == '\\')
       p = p.substr(0, p.length() - 1);
     std::replace(p.begin(), p.end(), '\\', '/');
-    for (auto &p : std::filesystem::directory_iterator(p))
+    for (auto &p : fs::directory_iterator(p))
       if (p.path().extension().string().find(".png") != std::string::npos)
         colorMaps.push_back(p.path().filename().replace_extension("").string());
     return colorMaps;

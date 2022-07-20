@@ -1,4 +1,11 @@
 #pragma once
+#if __GNUC__ < 10
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#else
+#include <filesystem>
+namespace fs = std::filesystem;
+#endif
 #include <iostream>
 #include <utility>
 #include <boost/any.hpp>
@@ -11,7 +18,8 @@
 #include <typeindex>
 #include <boost/optional.hpp>
 #ifndef __CUDACC__
-#include <filesystem>
+
+
 #include <variant>
 #endif
 //#include <gvdb.h>

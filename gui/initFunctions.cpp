@@ -83,7 +83,6 @@ void GUI::initGL(int argc, char* argv[]) {
 
     
     if (simulationState.pm.get<bool>("video.active")) {
-   namespace fs = std::filesystem;
         
    fs::path basePath = simulationState.pm.get<std::string>("internal.working_directory");
 std::cout << basePath << std::endl;
@@ -128,8 +127,7 @@ void GUI::initSimulation() {
     // simulationState.initializeSPH();
 }
 
-std::filesystem::path resolveFileLocal(std::string fileName, std::vector<std::string> search_paths) {
-    namespace fs = std::filesystem;
+fs::path resolveFileLocal(std::string fileName, std::vector<std::string> search_paths) {
     fs::path expanded = fs::path(fileName);
 
     fs::path base_path = "";
@@ -158,7 +156,6 @@ void GUI::initParameters(int argc, char* argv[]) {
     // auto& pm = ParameterManager::instance();
     std::string stylePath;
     std::string fileName = "cfg/style.css";
-    namespace fs = std::filesystem;
     fs::path working_dir = fs::absolute(fs::path(argv[0])).remove_filename();
     fs::path binary_dir = fs::current_path();
     fs::path expanded = (fs::path(fileName));

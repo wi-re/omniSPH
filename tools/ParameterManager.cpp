@@ -1,4 +1,5 @@
 // #define _CRT_SECURE_NO_WARNINGS
+
 #define _SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
 #include <tools/ParameterManager.h>
 #ifndef NO_GUI
@@ -1016,7 +1017,6 @@ std::pair<std::string, std::string> split(std::string s) {
 		return getParameter(identifier).param;
 	}
 	void ParameterManager::load(std::string filename) {
-		namespace fs = std::filesystem;
 		if (!fs::exists(filename))
 			throw std::invalid_argument("File does not exist");
 

@@ -7,6 +7,7 @@
 #define STB_IMAGE_READ_IMPLEMENTATION
 #include <tools/stb_image.h>
 #include <simulation/SPH.h>
+#include <tools/ParameterManager.h>
 
 
 struct v4 { float x, y, z, w; };
@@ -260,7 +261,7 @@ static int32_t image_height = 1024;
     try {
       std::string file_name = simulationState.resolveFile(std::string("cfg/") + simulationState.pm.get<std::string>("colorMap.cmap") + ".png").string();
 
-      if (std::filesystem::exists(file_name)) {
+      if (fs::exists(file_name)) {
         // std::cout << "Loading " << file_name << std::endl;
         int32_t comp;
         unsigned char *image_data = stbi_load(file_name.c_str(), &image_width, &image_height, &comp, 4);
