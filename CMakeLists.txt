@@ -24,6 +24,7 @@ project(${NAME} LANGUAGES CXX)
 
 FIND_PACKAGE( yaml-cpp		REQUIRED )
 FIND_PACKAGE( Eigen3			REQUIRED ) 
+FIND_PACKAGE( Boost)
 
 configure_file(config.h.in config/config.h) 
 # Set Include paths, due to everything needing almost everything this is done here
@@ -35,6 +36,7 @@ SET(INCLUDE_DIRS
 	${GLAD_INCLUDE_DIR}
 	${GLFW3_INCLUDE_DIR}
 	${EIGEN3_INCLUDE_DIR}
+	${BOOST_INCLUDE_DIR}
 )
 INCLUDE_DIRECTORIES(${INCLUDE_DIRS})   
   
