@@ -25,6 +25,7 @@ project(${NAME} LANGUAGES CXX)
 FIND_PACKAGE( yaml-cpp		REQUIRED )
 FIND_PACKAGE( Eigen3			REQUIRED ) 
 FIND_PACKAGE( Boost)
+FIND_PACKAGE( glm )
 
 configure_file(config.h.in config/config.h) 
 # Set Include paths, due to everything needing almost everything this is done here
@@ -75,6 +76,7 @@ endmacro(_GLOB_SOURCES)
 macro(_SETUP_DEPENDENCIES MODULE_NAME)
 	target_link_libraries(${MODULE_NAME}
 		yaml-cpp
+		glm::glm
 		${ARGN}
 	)  
 	IF(WIN32)
