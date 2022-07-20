@@ -3,6 +3,7 @@
 #include <yaml-cpp/yaml.h>
 #include "2DMath.h"
 #include <imgui/imgui.h>
+#include <mutex>
 
 
 namespace YAML {
@@ -380,7 +381,7 @@ void SPHSimulation::initializeSPH(){
     fluidUID.resize(n);
     fluidTriangleNeighborList.resize(n);
 
-    scalar baseArea = std::numbers::pi * pm.get<scalar>("props.baseRadius") * pm.get<scalar>("props.baseRadius");
+    scalar baseArea = double_pi * pm.get<scalar>("props.baseRadius") * pm.get<scalar>("props.baseRadius");
     baseRadius = pm.get<scalar>("props.baseRadius");
     baseSupport = pm.get<scalar>("props.baseSupport");
 
@@ -559,7 +560,7 @@ void SPHSimulation::initializeSPH(){
                         if (q < epsilon || q > scalar(1.0))
                             continue;
                             
-                        vec grad = -r / rn * 7.0 / std::numbers::pi / (baseSupport * baseSupport * baseSupport) * (20.0 * q * power(1 - q, 3));
+                        vec grad = -r / rn * 7.0 / double_pi / (baseSupport * baseSupport * baseSupport) * (20.0 * q * power(1 - q, 3));
 
                         normal += grad;
                         // std::cout << "\t" << idx << " " << i << " : " << xi << " : " << yi << " => " << grad.x() << " " << grad.y() << " -> " << W(pos,pb) << " @ " << d << " -> " << q << std::endl;
@@ -626,9 +627,9 @@ void SPHSimulation::initializeSPH(){
         if(!emit)continue;
             fluidPosition[numPtcls]         = ptcls[i];
             fluidVelocity[numPtcls]         = source.emitterVelocity;
-            fluidArea[numPtcls]             = source.emitterRadius * source.emitterRadius * std::numbers::pi;
+            fluidArea[numPtcls]             = source.emitterRadius * source.emitterRadius * double_pi;
             fluidRestDensity[numPtcls]      = source.emitterDensity;
-            fluidSupport[numPtcls]          = std::sqrt(fluidArea[numPtcls] * targetNeighbors / std::numbers::pi);
+            fluidSupport[numPtcls]          = std::sqrt(fluidArea[numPtcls] * targetNeighbors / double_pi);
             fluidPriorPressure[numPtcls]    = 0.;
             fluidVorticity[numPtcls] = 0.;
             fluidAngularVelocity[numPtcls] = 0.;

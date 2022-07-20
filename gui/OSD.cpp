@@ -118,7 +118,7 @@ void GUI::OSD(){
             };
             struct float2{float x,y;};
             auto addScalar2 = [&](auto name, vec value, auto description) {
-                float2 vcp(value.x(), value.y());
+                float2 vcp{(float)value.x(), (float)value.y()};
                 auto col = ImGui::GetStyle().Colors[ImGuiCol_FrameBg];
                 ImGui::GetStyle().Colors[ImGuiCol_FrameBg] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
                 ImGui::DragFloat2(name, &vcp.x, 0, 0, 0, "%.6f");

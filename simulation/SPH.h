@@ -31,6 +31,8 @@ using complex = std::complex<scalar>;
 using clk = std::chrono::high_resolution_clock;
 // constexpr inline scalar domainScale = 100.0;
 
+constexpr inline double double_pi = 3.141592653589793238462643383279502884L;
+
 inline std::ofstream summaryFile;
 inline bool summaryFileOpen = false;
 //// kernel Parameters

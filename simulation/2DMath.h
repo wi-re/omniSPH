@@ -68,7 +68,7 @@ inline scalar W(vec a, vec b, scalar ha, scalar hb) {
     //else if (q <= scalar(1.0))
     //  return kernelConstant * power(scalar(1.0) - q, 3);
     if (q < 1.0)
-        return 7.0 / std::numbers::pi / (support * support) * power(1.0 - q, 4) * (1.0 + 4.0 * q);
+        return 7.0 / double_pi / (support * support) * power(1.0 - q, 4) * (1.0 + 4.0 * q);
     // wend 4
     //if (q < 1.0)
     //    return 9.0 / pi / (support * support) * power(1.0 - q, 6) * (1.0 + 6.0 * q + 35.0 / 3.0 * q * q);
@@ -94,7 +94,7 @@ inline vec gradW(vec a, vec b, scalar ha, scalar hb) {
     //return -r/rn * scalar(30.0) / scalar(pi * support * support * support) * power(scalar(1.0) - q, 2);
 
     // wend2
-    return -r / rn * 7.0 / std::numbers::pi / (support * support * support) * (20.0 * q * power(1 - q, 3));
+    return -r / rn * 7.0 / double_pi / (support * support * support) * (20.0 * q * power(1 - q, 3));
 
     // wend4
     //return -r / rn * 9.0 / pi / (support * support * support) * 56.0 / 3.0 * q * (5.0 * q + 1.0) * power(1 - q, 5);

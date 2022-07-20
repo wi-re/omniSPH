@@ -43,9 +43,9 @@ void SPHSimulation::emitParticles(){
         if(!emit) continue;
             fluidPosition[numPtcls]         = pos;
             fluidVelocity[numPtcls]         = source.emitterVelocity;
-            fluidArea[numPtcls]             = source.emitterRadius * source.emitterRadius * std::numbers::pi;
+            fluidArea[numPtcls]             = source.emitterRadius * source.emitterRadius * double_pi;
             fluidRestDensity[numPtcls]      = source.emitterDensity;
-            fluidSupport[numPtcls]          = std::sqrt(fluidArea[numPtcls] * targetNeighbors / std::numbers::pi);
+            fluidSupport[numPtcls]          = std::sqrt(fluidArea[numPtcls] * targetNeighbors / double_pi);
             fluidPriorPressure[numPtcls]    = 0.;
             fluidVorticity[numPtcls] = 0.;
             fluidAngularVelocity[numPtcls] = 0.;
@@ -61,8 +61,8 @@ void SPHSimulation::emitParticles(){
 
 
 std::vector<vec> fluidSource::genParticles() const{
-    scalar area = std::numbers::pi * emitterRadius * emitterRadius;
-    scalar support = std::sqrt(area * targetNeighbors / std::numbers::pi);
+    scalar area = double_pi * emitterRadius * emitterRadius;
+    scalar support = std::sqrt(area * targetNeighbors / double_pi);
     scalar packing = 0.39960767069134208 * support;
     vec center = (emitterMin + emitterMax) / 2.;
     vec pdiff = (emitterMax - emitterMin) / 2.;
@@ -96,8 +96,8 @@ std::vector<vec> fluidSource::genParticles() const{
 }
 
 std::vector<vec> SPHSimulation::genParticles(vec minCoord, vec maxCoord, scalar radius, scalar packing){
-    scalar area = std::numbers::pi * radius * radius;
-    scalar support = std::sqrt(area * targetNeighbors / std::numbers::pi);
+    scalar area = double_pi * radius * radius;
+    scalar support = std::sqrt(area * targetNeighbors / double_pi);
 
   auto gen_position = [](auto r, auto i, auto j) -> vec {
     //return vec(r * (2.0 * scalar(i) + scalar(j % 2)), r * ::sqrt(3.0) * scalar(j));
@@ -123,8 +123,8 @@ std::vector<vec> SPHSimulation::genParticles(vec minCoord, vec maxCoord, scalar 
   return points;
 }
 std::vector<vec> SPHSimulation::genParticlesCircle(vec minCoord, vec maxCoord, scalar rad, scalar packing) {
-    scalar area = std::numbers::pi * rad * rad;
-    scalar support = std::sqrt(area * targetNeighbors / std::numbers::pi);
+    scalar area = double_pi * rad * rad;
+    scalar support = std::sqrt(area * targetNeighbors / double_pi);
     vec center = (minCoord + maxCoord) / 2.;
     vec pdiff = (maxCoord - minCoord) / 2.;
     scalar radius = std::min(pdiff.x(), pdiff.y());
