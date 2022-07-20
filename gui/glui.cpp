@@ -13,7 +13,7 @@ GUI::GUI() {
     //ParameterManager::instance().newParameter("renderTime", float{ 0.f }, { .constant = true });
 }
 void GUI::uiFunctions() {
-    if (show_parameter_window) ParameterManager::instance().buildImguiWindow(&show_parameter_window);
+    if (show_parameter_window) simulationState.pm.buildImguiWindow(&show_parameter_window);
     if (show_timer_window) TimerWindow(&show_timer_window);
     static bool show_ray_window = true;
     RayWindow(&show_ray_window);
@@ -22,8 +22,13 @@ void GUI::uiFunctions() {
 }
 void GUI::quit() {
     shouldStop = true;
+#ifdef WIN32
     if (m_ffmpegPipe != nullptr)
         _pclose(m_ffmpegPipe);
+#else
+    if (m_ffmpegPipe != nullptr)
+        pclose(m_ffmpegPipe);
+#endif
     if (summaryFileOpen)
         summaryFile.close();
     ImGui_ImplOpenGL3_Shutdown();

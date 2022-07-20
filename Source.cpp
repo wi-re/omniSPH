@@ -2,29 +2,12 @@
 #include "gui/glui.h"
 #include <sstream>
 #include <thread>
-#include <windows.h>
+//#include <windows.h>
 #include <iostream> 
-
-BOOL CtrlHandler(DWORD fdwCtrlType) {
-    std::clog << "Caught signal " << fdwCtrlType << std::endl;
-    switch (fdwCtrlType)
-    {
-    case CTRL_CLOSE_EVENT:
-        GUI::instance().quit();
-        GUI::instance().render_lock.unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-        return(TRUE);
-
-    default:
-        return FALSE;
-    }
-}
-#include <test.h>
 #include <simulation/2DMath.h>
-#include <cheb/cheb.h>
 #include <iomanip>
 
-#include <tools/Timer.h>
+#include <tools/timer.h>
 
 scalar sdpolygon2(std::vector<vec> v, vec p) {
     scalar d = (p - v[0]).dot(p - v[0]);
@@ -46,185 +29,166 @@ scalar sdpolygon2(std::vector<vec> v, vec p) {
 int main(int argc, char* argv[]) 
 //try 
 {
-    auto getDelta = [](scalar packing) {
-        auto cubeMax = [](auto x) {
-            return std::max(0.0, x * x * x);
-        };
-        cheb::scalar delta = 0.0;
-        for (int32_t i = -5; i <= 5; ++i) {
-            for (int32_t j = -5; j <= 5; ++j) {
-                cheb::scalar x = packing * (2.0 * (cheb::scalar)i + (cheb::scalar)(j % 2));
-                cheb::scalar y = packing * std::sqrt(3.0) * cheb::scalar(j);
-                cheb::scalar dist = std::sqrt(x * x + y * y);
-                cheb::scalar q = dist / std::sqrt(20.0 / M_PI);
-                //std::cout << i << " : " << j << " -> " << x << " : " << y << " => " << dist << " : " << q << " ==> " << 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q)) << std::endl;
-                // spline
-                //delta += 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q));
-                // wendland 2
-                delta += 7.0 / 20.0 * power(std::max(1.0 - q, 0.0), 4) * (1.0 + 4.0 * q);
-            }
-        }
-        return delta;
-    };
-    auto getDelta2 = [](scalar packing) {
-        auto cubeMax = [](auto x) {
-            return std::max(0.0, x * x * x);
-        };
-        cheb::scalar delta = 0.0;
-        for (int32_t i = -5; i <= 5; ++i) {
-            for (int32_t j = 0; j <= 5; ++j) {
-                cheb::scalar x = packing * (2.0 * (cheb::scalar)i + (cheb::scalar)(j % 2));
-                cheb::scalar y = packing * std::sqrt(3.0) * cheb::scalar(j);
-                cheb::scalar dist = std::sqrt(x * x + y * y);
-                cheb::scalar q = dist / std::sqrt(20.0 / M_PI);
-                //std::cout << i << " : " << j << " -> " << x << " : " << y << " => " << dist << " : " << q << " ==> " << 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q)) << std::endl;
-                // spline
-                //delta += 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q));
-                // wendland 2
-                delta += 7.0 / 20.0 * power(std::max(1.0 - q,0.0), 4) * (1.0 + 4.0 * q);
-            }
-        }
-        return delta;
-    };
+//     simulationState = SPHSimulation(R"(
+// fluids:
+//     - min: [0.2, 0.2]
+//       max: [0.4, 0.4]
+//       radius: 0.0025
+//       velocity: [1, 0]
+//       shape: spherical
+//       type: inlet
+//       timeLimit: 1.0
+//       ramp: 0.5
+// fluidsB:
+//     - min: [0.6, 0.6]
+//       max: [0.8, 0.8]
+//       radius: 0.00125
+//       velocity: [-1, 0]
+//       shape: spherical
+//       type: once
+    
+// triangles:
+//     - v0: [0.375, 0.02]
+//       v1: [0.40625, 0.02]
+//       v2: [0.40625, 0.06]
+//     - v0: [0.40625, 0.02]
+//       v1: [0.59375, 0.02]
+//       v2: [0.59375, 0.06]
+//     - v0: [0.40625, 0.02]
+//       v1: [0.40625, 0.06]
+//       v2: [0.59375, 0.06]
+//     - v0: [0.59375, 0.02]
+//       v1: [0.625, 0.02]
+//       v2: [0.59375, 0.06]
+
+// gravity:
+//     - pointSource: true
+//       location: [0.5, 0.75]
+//       magnitude: 9.81
+//     - pointSource: true
+//       location: [0.5, 0.25]
+//       magnitude: 9.81
+
+// domain:
+//     min: [0,0]
+//     max: [2, 1]
+
+// sim:
+//     maxDt: 0.001
+//     minDt: 0.001
+//     )");
+
+//     simulationState = SPHSimulation(R"(
+// fluids:
+//     - min: [0.0225, 0.0225]
+//       max: [0.25, 0.5]
+//       radius: 0.0025
+//       type: once
+//     - min: [0.75, 0.021]
+//       max: [0.98, 0.5]
+//       radius: 0.0025
+//       type: once
+
+// gravity:
+//     - pointSource: false
+//       direction: [0., -1.]
+//       magnitude: 9.81
+
+// triangles:
+//     - v0: [0.375, 0.02]
+//       v1: [0.40625, 0.02]
+//       v2: [0.40625, 0.06]
+//     - v0: [0.40625, 0.02]
+//       v1: [0.59375, 0.02]
+//       v2: [0.59375, 0.06]
+//     - v0: [0.40625, 0.02]
+//       v1: [0.40625, 0.06]
+//       v2: [0.59375, 0.06]
+//     - v0: [0.59375, 0.02]
+//       v1: [0.625, 0.02]
+//       v2: [0.59375, 0.06]
+
+// domain:
+//     min: [0,0]
+//     max: [1, 1]
+//     epsilon: 0.02
+
+// sim:
+//     maxDt: 0.001
+//     minDt: 0.001
+
+// export:
+//     active: true
+//     limit: 0.5
+//     interval: 10
+// )");
+
+if(argc > 1){
+  std::string fileName = argv[1];
+  std::ifstream t(fileName);
+  std::stringstream buffer;
+  buffer << t.rdbuf();  
+    simulationState = SPHSimulation(buffer.str());
+}
+else{
 
 
-    auto desiredCompression = 1.00;
-    auto desiredParticles = 100.0;
 
-    std::cout << "Delta1: " << std::setprecision(17) << getDelta(0.01 * std::sqrt(20) / std::sqrt(M_PI))<<" <-> " << getDelta(0.5 * std::sqrt(20) / std::sqrt(M_PI)) << std::endl;
-    cheb::Function packFun([&](cheb::scalar s) {
-        return getDelta(s * std::sqrt(20) / std::sqrt(M_PI)) - desiredCompression;
-        }, cheb::Domain{ 0.01,0.5 });
-    auto chebPacking = packFun.roots()[0];
+    simulationState = SPHSimulation(R"(
+fluids:
+    - min: [0.2, 0.4]
+      max: [0.4, 0.6]
+      velocity: [1,0]
+      radius: 0.00279783
+      type: once
+      shape: spherical
+    - min: [0.6, 0.4]
+      max: [0.8, 0.6]
+      velocity: [-1,0]
+      radius: 0.00279783
+      type: once
+      shape: spherical
 
-    cheb::Function distFun([&](cheb::scalar s) {
-        return getDelta2(chebPacking * std::sqrt(20) / std::sqrt(M_PI)) + boundaryKernel(-s) - desiredCompression;
-        }, cheb::Domain{ 0.01,0.5 });
-    auto chebDist = distFun.roots()[0];
-    std::cout << "Packing: " << std::setprecision(17) << chebPacking << std::endl;
-    std::cout << "Spacing: " << std::setprecision(17) << chebDist << std::endl;
+gravity:
+    - pointSource: false
+      direction: [0., -1.]
+      magnitude: 9.81
 
-    cheb::Function spaceFun([&](cheb::scalar s) {
-        return ((domainHeight - 2.0 * domainEpsilon) / s - 2.0 * chebDist) / ( std::sqrt(3) * chebPacking) - desiredParticles;
-        }, cheb::Domain{ 0.01,1.0 });
-    std::cout << "Scaling: " << std::setprecision(17) << spaceFun.roots()[0] << std::endl;
+triangles:
+    - v0: [0.375, 0.02]
+      v1: [0.40625, 0.02]
+      v2: [0.40625, 0.06]
+    - v0: [0.40625, 0.02]
+      v1: [0.59375, 0.02]
+      v2: [0.59375, 0.06]
+    - v0: [0.40625, 0.02]
+      v1: [0.40625, 0.06]
+      v2: [0.59375, 0.06]
+    - v0: [0.59375, 0.02]
+      v1: [0.625, 0.02]
+      v2: [0.59375, 0.06]
 
-    inletPacking = chebPacking;
-    inletSpacing = chebDist;
-    std::cout << "Error: " << getDelta(chebPacking * std::sqrt(20) / std::sqrt(M_PI)) << std::endl;
+domain:
+    min: [0,0]
+    max: [1, 1]
+    epsilon: 0.02
 
-    cheb::scalar delta = 0.0;
-    for (int32_t i = -5; i <= 5; ++i) {
-        for (int32_t j = -5; j <= 5; ++j) {
-            cheb::scalar x = chebPacking * (2.0 * (cheb::scalar)i + (cheb::scalar)(j % 2));
-            cheb::scalar y = chebPacking * std::sqrt(3.0) * cheb::scalar(j);
-            cheb::scalar dist = std::sqrt(x * x + y * y);
-            cheb::scalar q = dist / support;
-            //std::cout << i << " : " << j << " -> " << x << " : " << y << " => " << dist << " : " << q << " ==> " << 4. / 7. * (cubeMax(1 - q) - 4. * cubeMax(0.5 - q)) << std::endl;
-            delta += area * W(vec(0, 0), vec(x, y));
-        }
-    }
-    std::cout << "Delta: " << delta << std::endl;
-    std::cout << "\n\n\n\n";
-    std::cout << "constexpr inline scalar scale = " << std::setprecision(17) << spaceFun.roots()[0] << "; // desired particles: " << desiredParticles << std::endl;
-    std::cout << "constexpr inline scalar packing_2D = " << std::setprecision(17) << chebPacking << " * scale; // desired compression: " << desiredCompression << std::endl;
-    std::cout << "constexpr inline scalar spacing_2D = " << std::setprecision(17) << chebDist << " * scale; // actual delta: " << delta << std::endl;
-    std::cout << "\n\n\n\n";
+sim:
+    maxDt: 0.0005
+    minDt: 0.0005
 
-
-
-
-    vec P1(domainEpsilon, domainEpsilon);
-    vec P2(domainWidth - domainEpsilon, domainEpsilon);
-    vec P3(domainWidth - domainEpsilon, domainHeight - domainEpsilon);
-    vec P4(domainEpsilon, domainHeight - domainEpsilon);
-    std::vector<vec> polygon;
-    polygon.push_back(P2);
-    polygon.push_back(P3);
-    polygon.push_back(P4);
-    polygon.push_back(P1);
-    auto v = vec(2 * domainEpsilon, domainEpsilon + spacing_2D);
-    scalar d =  sdpolygon2(polygon, v);
-    std::cout << d << " -> " << d / scale << std::endl;
-    auto [hit, pb, dis, k, gk] = interactLines(v, polygon, true);
-    std::cout << hit << " -> " << dis << ", " << k << " @ " << dis / scale << " -> " << boundaryKernel(dis/scale) << std::endl;
-
-
-    std::cout << "r = " << 1 / std::sqrt(M_PI) << std::endl;
-    std::cout << "h = " << std::sqrt(20) / std::sqrt(M_PI) << std::endl;
-    std::cout << "packing = " << 0.21314955649168332 * std::sqrt(20) / std::sqrt(M_PI) << std::endl;
-
-    std::cout << getDelta(0.21314955649168332 * std::sqrt(20) / std::sqrt(M_PI)) << std::endl;
-
-    // found by maxima
-    auto h = std::sqrt(20) / std::sqrt(M_PI);
-    auto dist = 0.1977501895407778 * h; 
-    auto packing = 0.2131495564916834 * h;
-
-    std::cout << getDelta2(packing) << std::endl;
-    std::cout << boundaryKernel(-dist / h) << " : " << boundaryKernel(dist / h) << std::endl;
-    std::cout << getDelta2(packing) + boundaryKernel(-dist / h) << std::endl;
-
-    //return 0;
-
-
-    {
-        cheb::scalar termb = 0.0;
-        vec terma(0, 0);
-        scalar rho = 0.0;
-        for (int32_t i = -5; i <= 5; ++i) {
-            for (int32_t j = -5; j <= 5; ++j) {
-                cheb::scalar x = packing_2D * (2.0 * (cheb::scalar)i + (cheb::scalar)(j % 2));
-                cheb::scalar y = packing_2D * std::sqrt(3.0) * cheb::scalar(j);
-                cheb::scalar dist = std::sqrt(x * x + y * y);
-                cheb::scalar q = dist / std::sqrt(20.0 / M_PI);
-
-                auto grad = gradW(vec(0, 0), vec(x, y));
-                auto k = W(vec(0, 0), vec(x, y));
-                rho += area * k;
-                terma += grad;
-                termb += grad.dot(grad);
-                std::cout << "\t" << x << " " << y << " -> " << grad.x() << " x " << grad.y() << std::endl;
-            }
-        }
-
-        auto delta = 1. / (+terma.dot(terma) + termb);
-        std::cout << std::defaultfloat << "[ " << terma.x() << " " << terma.y() << " ]  - " << termb << " => " << delta << " @ " << rho << " -> " << std::hexfloat << delta << std::endl;
-    }
-
-
-    //cheb::Function testFn([](cheb::scalar s) {
-    //    if (s < 0) return -1.;
-    //    return 1.;
-    //    });
-    //testInterval();
-    //testDomain();
-    //testChebTech();
-    //testChebTech_functions();
-    //testArithmetic();
-    //testRoots();
-    //testUtilities();
-
-    //testFunction_Construction();
-    //testFunction_Properties();
-    //testFunction_ClassUsage();
-    //testFunction_Evaluation();
-    //testFunction_Calculus();
-    //testFunction_Roots();
-    //testFunction_Arithmetic();
-    //testFunction();
-    if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE)CtrlHandler, TRUE)) {
-        std::cerr << "Could not set CtrlHandler. Exiting." << std::endl;
-        return 0;
-    }
-    //_set_se_translator(translator);
-
+export:
+    active: true
+    limit: 2.0
+    interval: 5
+)");
+}
     auto& gui = GUI::instance();
     gui.render_lock.lock();
+    gui.initSimulation();
     gui.initParameters(argc, argv);
     gui.initGVDB();
-    gui.initSimulation();
-    gui.initGL();
+    gui.initGL(argc, argv);
     gui.renderLoop();
 
 

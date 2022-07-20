@@ -17,17 +17,17 @@
 //#include <gvdb.h>
 #include <eigen3/Eigen/Dense>
 
-#if !__has_include(<cuda_runtime.h>)
-#define float2 Eigen::Vector2f
-#define float3 Eigen::Vector3f
-#define float4 Eigen::Vector4f
-#define int2 Eigen::Vector2i
-#define int3 Eigen::Vector3i
-#define int4 Eigen::Vector4i
-#define double2 Eigen::Vector2d
-#define double3 Eigen::Vector3d
-#define double4 Eigen::Vector4d
-#endif
+// #if !__has_include(<cuda_runtime.h>)
+using float2 = Eigen::Vector2f;
+using float3 = Eigen::Vector3f;
+using float4 = Eigen::Vector4f;
+using  int2 =Eigen::Vector2i;
+using  int3 =Eigen::Vector3i;
+using  int4 =Eigen::Vector4i;
+using double2 =Eigen::Vector2d;
+using double3 =Eigen::Vector3d;
+using double4 =Eigen::Vector4d;
+// #endif
 
 namespace YAML {
 	class Node;
@@ -101,7 +101,7 @@ public:
 	void addDecoder(std::type_index ty, std::function<detail::iAny(const YAML::Node&)> fn);
 	void addEncoder(std::type_index ty, std::function<YAML::Node(const detail::iAny&)> fn);
 	void addUifunction(std::type_index ty, std::function<void(Parameter&)> fn);
-	static ParameterManager& instance();
+	// static ParameterManager& instance();
 	template<typename T>
 	void newParameter(std::string identifier, T defaultValue) {
 		if (parameterList.find(identifier) != parameterList.end())
@@ -137,7 +137,7 @@ public:
 
 	void load(std::string filename);
 	void loadDirect(std::string yaml);
-	YAML::Node buildTree();
+	std::string buildTree();
 	void loadTree(YAML::Node);
 	void buildImguiWindow(bool* p_open);
 
@@ -145,52 +145,59 @@ public:
 };
 
 
-#define callEncoder(ty, x) ParameterManager::instance().encoders[typeid(ty)](x);
-#define callDecoder(ty, n, alt) n ? boost::any_cast<ty>(ParameterManager::instance().decoders[typeid(ty)](n)) : alt;
+#define callEncoder(ty, x) pm.encoders[typeid(ty)](x);
+#define callDecoder(ty, n, alt) n ? boost::any_cast<ty>(pm.decoders[typeid(ty)](n)) : alt;
 #define callUI(ty, variable, member)\
 {\
 	auto xParam = Parameter{ parameter.identifier + member, parameter.identifierNamespace, variable, typeid(ty), parameter.properties };\
-	ParameterManager::instance().uiFunctions[typeid(ty)](xParam);\
+	pm.uiFunctions[typeid(ty)](xParam);\
 	if(!parameter.properties.constant)\
-		variable = (ty) xParam.param.val.value();\
+		variable = boost::any_cast<ty>(xParam.param.val.value());\
 }
 #define customVector(ty)\
-	ParameterManager::instance().addEncoder(typeid(std::vector<ty>), [](const detail::iAny& any) {\
-		const auto& var = boost::any_cast<const std::vector<ty>&>(any);\
+	pm.addEncoder(typeid(std::vector<ty>), [this](const detail::iAny& any) {\
+	printf(".");\
+		auto var = boost::any_cast<std::vector<ty>>(any);\
+		printf("-");\
 		auto node = YAML::Node();\
-		for (const auto& elem : var)\
-			node.push_back(ParameterManager::instance().encoders[typeid(ty)](elem));\
+		printf(",");\
+		for (const auto& elem : var){\
+			printf("=");\
+			detail::iAny any = detail::iAny(elem);\
+			node.push_back(pm.encoders[typeid(std::decay_t<ty>)](any));\
+		}\
+		printf(":");\
 		return node;\
 		});\
-	ParameterManager::instance().addDecoder(typeid(std::vector<ty>), [](const YAML::Node& node) {\
+	pm.addDecoder(typeid(std::vector<ty>), [this](const YAML::Node& node) {\
 		std::vector<ty> vec;\
 		for (const auto& child : node)\
-			vec.push_back((ty)ParameterManager::instance().decoders[typeid(ty)](child));\
+			vec.push_back((ty)pm.decoders[typeid(ty)](child));\
 		return detail::iAny(vec);\
-		});\
-	ParameterManager::instance().addUifunction(typeid(std::vector<ty>), [](Parameter& parameter) {\
-		std::vector<ty>& vec = boost::any_cast<std::vector<ty>&>(parameter.param.valVec.value());\
-		if (parameter.properties.hidden) return;\
-		ImGui::PushID(parameter.identifier.c_str());\
-		ImGui::Text(parameter.identifier.c_str());\
-		if (!parameter.properties.constant) {\
-			ImGui::SameLine();\
-			if (ImGui::Button("+"))\
-				vec.push_back(ty());\
-			ImGui::SameLine();\
-			if (ImGui::Button("-"))\
-				vec.pop_back();\
-		}\
-		int32_t i = 0;\
-		for (auto& elem : vec) {\
-			ImGui::Indent();\
-			ImGui::PushID(i);\
-			auto eParam = Parameter{ parameter.identifier + "[" + std::to_string(i++) + "]", parameter.identifierNamespace, elem, typeid(ty), parameter.properties };\
-			ParameterManager::instance().uiFunctions[typeid(ty)](eParam);\
-			ImGui::Unindent();\
-			ImGui::PopID();\
-			if (!parameter.properties.constant)\
-				elem = (ty) eParam.param.val.value();\
-		}\
-		ImGui::PopID();\
-		});
+		}); //\
+	// pm.addUifunction(typeid(std::vector<ty>), [this](Parameter& parameter) {\
+	// 	std::vector<ty>& vec = boost::any_cast<std::vector<ty>&>(parameter.param.valVec.value());\
+	// 	if (parameter.properties.hidden) return;\
+	// 	ImGui::PushID(parameter.identifier.c_str());\
+	// 	ImGui::Text(parameter.identifier.c_str());\
+	// 	if (!parameter.properties.constant) {\
+	// 		ImGui::SameLine();\
+	// 		if (ImGui::Button("+"))\
+	// 			vec.push_back(ty());\
+	// 		ImGui::SameLine();\
+	// 		if (ImGui::Button("-"))\
+	// 			vec.pop_back();\
+	// 	}\
+	// 	int32_t i = 0;\
+	// 	for (auto& elem : vec) {\
+	// 		ImGui::Indent();\
+	// 		ImGui::PushID(i);\
+	// 		auto eParam = Parameter{ parameter.identifier + "[" + std::to_string(i++) + "]", parameter.identifierNamespace, elem, typeid(ty), parameter.properties };\
+	// 		pm.uiFunctions[typeid(ty)](eParam);\
+	// 		ImGui::Unindent();\
+	// 		ImGui::PopID();\
+	// 		if (!parameter.properties.constant)\
+	// 			elem = (ty) eParam.param.val.value();\
+	// 	}\
+	// 	ImGui::PopID();\
+	// 	});

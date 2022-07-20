@@ -18,9 +18,9 @@ void GUI::OSD(){
         if (ImGui::Begin("Stats overlay", &m_showText, (corner != -1 ? ImGuiWindowFlags_NoMove : 0) | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav))
         {
             auto addParameter = [&](auto paramName) {
-                auto& param = ParameterManager::instance().getParameter(paramName);
+                auto& param = simulationState.pm.getParameter(paramName);
                 ImGui::PushID(param.identifier.c_str());
-                ParameterManager::instance().uiFunctions[param.type](param);
+                simulationState.pm.uiFunctions[param.type](param);
                 ImGui::PopID();
             };
 
@@ -28,7 +28,7 @@ void GUI::OSD(){
             addParameter("dt");
             //addParameter("simTime");
             //addParameter("renderTime");
-            addParameter("numptcls");
+            addParameter("numPtcls");
             addParameter("densityIterations");
             addParameter("densityError");
             addParameter("divergenceIterations");
@@ -36,33 +36,52 @@ void GUI::OSD(){
             //addParameter("color_map.buffer");
             addParameter("colorMap.min");
             addParameter("colorMap.max");
+            //if (dualView) {
+            //    addParameter("colorMap.minDual");
+            //    addParameter("colorMap.maxDual");
+
+            //}
 
         }
         ImGui::End();
     }
-    if(m_showInfo){
-        if (particles.size() == 0 ||
-            ParameterManager::instance().get<int32_t>("sim.frame") == 0)return;
+    if(m_showText){
+        static auto& numPtcls = simulationState.pm.get<int32_t>("props.numPtcls");
+        if (numPtcls == 0 ||
+            simulationState.pm.get<int32_t>("sim.frame") == 0)return;
 
 
-        auto x = std::clamp(m_cursorPosition.x(), 0.0, (scalar)screenWidth) / (scalar)screenWidth;
-        auto y = (dualView ?2.0:1.0) * std::clamp(m_cursorPosition.y(), 0.0, (scalar)screenHeight) / (scalar)screenHeight;
+        int display_w, display_h;
+        glfwGetFramebufferSize(window, &display_w, &display_h);
+
+        auto x = std::clamp(m_cursorPosition.x(), 0.0, (scalar)display_w) / (scalar)display_w;
+        auto y =1. * std::clamp(m_cursorPosition.y(), 0.0, (scalar)display_h) / (scalar)display_h;
         if (y > 1.0)
             y -= 1.0;
         y = 1.0 - y;
+        auto domainMin = simulationState.pm.get<vec>("domain.min");
+        auto domainMax = simulationState.pm.get<vec>("domain.max");
+        auto domainWidth = domainMax.x() - domainMin.x();
+        auto domainHeight = domainMax.y() - domainMin.y();
+
         x *= domainWidth;
         y *= domainHeight;
+        x += domainMin.x();
+        y += domainMin.y();
         vec position(x, y);
-        auto [ix, iy] = getCellIdx(x, y);
+        auto [ix, iy] = simulationState.getCellIdx(x, y);
         int32_t closestIdx = -1;
         scalar closestDist = DBL_MAX;
+        bool found = false;
+        auto cellsX = simulationState.pm.get<int32_t>("props.cellsX");
+        auto cellsY = simulationState.pm.get<int32_t>("props.cellsY");
         for (int32_t xi = -1; xi <= 1; ++xi) {
             for (int32_t yi = -1; yi <= 1; ++yi) {
                 if (ix + xi < 0 || ix + xi > cellsX - 1 || iy + yi < 0 || iy + yi > cellsY - 1)
                     continue;
-                const auto& cell = getCell(ix + xi, iy + yi);
+                const auto& cell = simulationState.getCell(ix + xi, iy + yi);
                 for (auto j : cell) {
-                    scalar dist = (particles[j].pos - position).norm();
+                    scalar dist = (simulationState.fluidPosition[j] - position).norm();
                     if (dist < closestDist) {
                         closestDist = dist;
                         closestIdx = j;
@@ -70,7 +89,7 @@ void GUI::OSD(){
                 }
             }
         }
-        if (closestIdx == -1)return;
+        if (closestIdx != -1)found = true;
         const float DISTANCE = 10.0f;
         static int corner = 3;
         ImGuiIO& io = ImGui::GetIO();
@@ -94,17 +113,18 @@ void GUI::OSD(){
                 ImGui::DragFloat(name, &vcp, 0, vcp, vcp,"%.6f");
                 ImGui::GetStyle().Colors[ImGuiCol_FrameBg] = col;
                 if(ImGui::IsItemHovered())
-                    ImGui::SetTooltip(description);
+                    ImGui::SetTooltip("%s",description);
                 return;
             };
+            struct float2{float x,y;};
             auto addScalar2 = [&](auto name, vec value, auto description) {
                 float2 vcp(value.x(), value.y());
                 auto col = ImGui::GetStyle().Colors[ImGuiCol_FrameBg];
                 ImGui::GetStyle().Colors[ImGuiCol_FrameBg] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-                ImGui::DragFloat2(name, &vcp.x(), 0, 0, 0, "%.6f");
+                ImGui::DragFloat2(name, &vcp.x, 0, 0, 0, "%.6f");
                 ImGui::GetStyle().Colors[ImGuiCol_FrameBg] = col;
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(description);
+                    ImGui::SetTooltip("%s",description);
                 return;
             };
             auto addInteger = [&](auto name, int32_t value, auto description) {
@@ -114,36 +134,36 @@ void GUI::OSD(){
                 ImGui::DragInt(name, &vcp, 0, vcp, vcp);
                 ImGui::GetStyle().Colors[ImGuiCol_FrameBg] = col;
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(description);
+                    ImGui::SetTooltip("%s",description);
                 return;
             };
 
 
 
-            auto p = particles[closestIdx];
-            auto dp = particlesDFSPH[closestIdx];
 
             addScalar2("Cursor        ", position, "");
             addInteger("Index         ", closestIdx, "");
-            addInteger("UID           ", p.uid, "");
-            addScalar2("Position      ", p.pos, "");
-            addScalar2("Velocity      ", p.vel, "");
-            addScalar2("Acceleration  ", p.accel, "");
-            addScalar ("Density       ", p.rho, "");
-            addScalar ("Neighbors     ", p.neighbors.size(), "");
-            addScalar ("Vorticity     ", p.vorticity, "");
-            addScalar ("Angular Vel   ", p.angularVelocity, "");
-            addScalar ("dfsph: alpha  ", dp.alpha, "");
-            addScalar ("dfsph: area   ", dp.area, "");
-            addScalar ("dfsph: p1     ", dp.pressure1, "");
-            addScalar ("dfsph: p2     ", dp.pressure2, "");
-            addScalar ("dfsph: pb     ", dp.pressureBoundary, "");
-            addScalar ("dfsph: source ", dp.source, "");
-            addScalar ("dfsph: dpdt   ", dp.dpdt, "");
-            addScalar ("dfsph: rhostar", dp.rhoStar, "");
-            addScalar2("dfsph: vel    ", dp.vel, "");
-            addScalar2("dfsph: accel  ", dp.accel, "");
-
+            int32_t i = closestIdx;
+            if(found){
+            addInteger("UID           ", simulationState.fluidUID[i], "");
+            addScalar2("Position      ", simulationState.fluidPosition[i], "");
+            addScalar2("Velocity      ", simulationState.fluidVelocity[i], "");
+            addScalar2("Acceleration  ", simulationState.fluidAccel[i], "");
+            addScalar ("Density       ", simulationState.fluidDensity[i], "");
+            addScalar ("Neighbors     ", simulationState.fluidNeighborList[i].size(), "");
+            //addScalar ("Vorticity     ", p.vorticity, "");
+            //addScalar ("Angular Vel   ", p.angularVelocity, "");
+            //addScalar ("dfsph: alpha  ", dp.alpha, "");
+            //addScalar ("dfsph: area   ", dp.area, "");
+            //addScalar ("dfsph: p1     ", dp.pressure1, "");
+            //addScalar ("dfsph: p2     ", dp.pressure2, "");
+            //addScalar ("dfsph: pb     ", dp.pressureBoundary, "");
+            //addScalar ("dfsph: source ", dp.source, "");
+            //addScalar ("dfsph: dpdt   ", dp.dpdt, "");
+            //addScalar ("dfsph: rhostar", dp.rhoStar, "");
+            //addScalar2("dfsph: vel    ", dp.vel, "");
+            //addScalar2("dfsph: accel  ", dp.accel, "");
+            }
 
 
 

@@ -4,7 +4,7 @@
 
 void GUI::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	static bool emit = false;
-	if (emit) emitParticles();
+	//if (emit) emitParticles();
 
 
 	if (action != GLFW_PRESS) { 
@@ -15,7 +15,7 @@ void GUI::keyCallback(GLFWwindow* window, int key, int scancode, int action, int
 	switch (key) {
 	case GLFW_KEY_P:
 		if (mods & GLFW_MOD_SHIFT)
-			timestep();
+			simulationState.timestep();
 		else
 			simulationRunning = !simulationRunning;
 		break;
@@ -24,18 +24,18 @@ void GUI::keyCallback(GLFWwindow* window, int key, int scancode, int action, int
 		break;
 	case GLFW_KEY_G:
 	{
-		auto& grid = ParameterManager::instance().get<bool>("render.showGrid");
+		auto& grid = simulationState.pm.get<bool>("render.showGrid");
 		grid = !grid;
 		break;
 	}
-	case GLFW_KEY_1: ParameterManager::instance().get<int32_t>("colorMap.map") = 0; break;
-	case GLFW_KEY_2: ParameterManager::instance().get<int32_t>("colorMap.map") = 1; break;
-	case GLFW_KEY_3: ParameterManager::instance().get<int32_t>("colorMap.map") = 2; break;
-	case GLFW_KEY_T: ParameterManager::instance().get<bool>("colorMap.auto") = !ParameterManager::instance().get<bool>("colorMap.auto"); break;
-	case GLFW_KEY_F: ParameterManager::instance().get<bool>("field.render") = !ParameterManager::instance().get<bool>("field.render"); break;
-	case GLFW_KEY_M: ParameterManager::instance().get<bool>("marching.render") = !ParameterManager::instance().get<bool>("marching.render"); break;
-	case GLFW_KEY_N: ParameterManager::instance().get<bool>("marching.solid") = !ParameterManager::instance().get<bool>("marching.solid"); break;
-	case GLFW_KEY_O: ParameterManager::instance().get<bool>("ptcl.render") = !ParameterManager::instance().get<bool>("ptcl.render"); break;
+	case GLFW_KEY_1: simulationState.pm.get<int32_t>("colorMap.map") = 0; break;
+	case GLFW_KEY_2: simulationState.pm.get<int32_t>("colorMap.map") = 1; break;
+	case GLFW_KEY_3: simulationState.pm.get<int32_t>("colorMap.map") = 2; break;
+	case GLFW_KEY_T: simulationState.pm.get<bool>("colorMap.auto") = !simulationState.pm.get<bool>("colorMap.auto"); break;
+	case GLFW_KEY_F: simulationState.pm.get<bool>("field.render") = !simulationState.pm.get<bool>("field.render"); break;
+	case GLFW_KEY_M: simulationState.pm.get<bool>("marching.render") = !simulationState.pm.get<bool>("marching.render"); break;
+	case GLFW_KEY_N: simulationState.pm.get<bool>("marching.solid") = !simulationState.pm.get<bool>("marching.solid"); break;
+	case GLFW_KEY_O: simulationState.pm.get<bool>("ptcl.render") = !simulationState.pm.get<bool>("ptcl.render"); break;
 	case GLFW_KEY_E: emit=true; break;
 	}
 }
@@ -43,21 +43,6 @@ bool trackingLeft = false;
 bool trackingRight = false;
 
 void GUI::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-	auto& orig = ParameterManager::instance().get<vec>("ray.origin");
-	auto& target = ParameterManager::instance().get<vec>("ray.target");
-
-	if (action == GLFW_PRESS) {
-		if (button == GLFW_MOUSE_BUTTON_LEFT) {
-			trackingLeft = true;
-			double x, y; glfwGetCursorPos(window, &x, &y);
-			orig = vec(x / (scalar)screenWidth * domainWidth, (screenHeight - y) / (scalar)screenHeight * domainHeight);
-		}
-		if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-			trackingRight = true;
-			double x, y; glfwGetCursorPos(window, &x, &y);
-			target = vec(x / (scalar)screenWidth * domainWidth, (screenHeight - y) / (scalar)screenHeight * domainHeight);
-		}
-	}
 	if(action == GLFW_RELEASE) {
 		if (button == GLFW_MOUSE_BUTTON_LEFT)
 			trackingLeft = false;
@@ -69,17 +54,8 @@ void GUI::mouseButtonCallback(GLFWwindow* window, int button, int action, int mo
 //#include <glrender/glparticleIndexRender/particleIndexRender.h>
 #include <imgui/imgui_internal.h>
 void GUI::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
-	auto& orig = ParameterManager::instance().get<vec>("ray.origin");
-	auto& target = ParameterManager::instance().get<vec>("ray.target");
-	auto GImGui = ImGui::GetCurrentContext();
-	if (trackingLeft) {
-		orig = vec(xpos / (scalar)screenWidth * domainWidth, (screenHeight - ypos) / (scalar)screenHeight * domainHeight);
-	}
-	if (trackingRight) {
-		//std::cout << xpos << " x " << ypos << " -> " << xpos / (scalar)screenWidth * domainWidth << " x " << ypos / (scalar)screenHeight * domainHeight << std::endl;
-		target = vec(xpos / (scalar)screenWidth * domainWidth, (screenHeight - ypos) / (scalar)screenHeight * domainHeight);
-	}
-	m_cursorPosition = vec(xpos, ypos);
+  m_cursorPosition = vec(xpos, ypos);
+
 
 
 }

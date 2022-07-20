@@ -268,12 +268,12 @@ void translator(InfoFromSE::exception_code_t code, struct _EXCEPTION_POINTERS* e
 #endif
 
 // The exception filter function:
-LONG WINAPI ExpFilter(EXCEPTION_POINTERS* pExp, DWORD dwExpCode) {
-    auto trace = dbg::stack_trace();
-    for (auto t : trace) {
-        std::cerr << t.address << ": " << t.file << " - " << t.line << " => " << t.name << " @ " << t.module << std::endl;
-    }
-    //StackWalker sw;
-    //sw.ShowCallstack(GetCurrentThread(), pExp->ContextRecord);
-    return EXCEPTION_EXECUTE_HANDLER;
-}
+// LONG WINAPI ExpFilter(EXCEPTION_POINTERS* pExp, DWORD dwExpCode) {
+//     auto trace = dbg::stack_trace();
+//     for (auto t : trace) {
+//         std::cerr << t.address << ": " << t.file << " - " << t.line << " => " << t.name << " @ " << t.module << std::endl;
+//     }
+//     //StackWalker sw;
+//     //sw.ShowCallstack(GetCurrentThread(), pExp->ContextRecord);
+//     return EXCEPTION_EXECUTE_HANDLER;
+// }

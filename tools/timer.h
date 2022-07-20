@@ -1,12 +1,12 @@
 #pragma once
 #include <algorithm>
 #include <chrono>
-#if __has_include(<cuda_runtime.h>)
-#ifndef CUDA_SUPPORT
-#define CUDA_SUPPORT
-#endif
-#include <cuda_runtime.h>
-#endif
+// #if __has_include(<cuda_runtime.h>)
+// #ifndef CUDA_SUPPORT
+// #define CUDA_SUPPORT
+// #endif
+// #include <cuda_runtime.h>
+// #endif
 #include <map>
 #include <mutex>
 #include <random>

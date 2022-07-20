@@ -1,667 +1,214 @@
 #include <simulation/SPH.h>
-#include "SPH.h"
-#include "2DMath.h"
-#include "config.h"
-#include <algorithm>
-#include <array>
-#include <boost/range/combine.hpp>
-#include <iostream>
-#include <numeric>
-#include <chrono>
-#include <sstream>
-#include <atomic>
+#include <simulation/2DMath.h>
+#include <cfloat>
 
-void density() {
+void SPHSimulation::density(){
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
 #pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        for (int32_t j : pi.neighbors) {
-            auto& pj = particles[j];
-            pi.rho += area * W(pi.pos, pj.pos);
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        auto& pi = fluidPosition[i];
+        auto& hi = fluidSupport[i];
+        auto rho = 0.;
+        for (int32_t j : fluidNeighborList[i]) {
+            rho += fluidArea[j] * W(pi, fluidPosition[j], hi, fluidSupport[j]);
         }
         //pi.rho = std::max(pi.rho, 0.5);
-        boundaryFunc(pi, [&pi, i](auto bpos, auto d, auto k, auto gk, auto triangle) {
-            //std::cout << i << " - " << pi.pos.x() << " : " << pi.pos.y() << " -> " << bpos.x() << " : " << bpos.y() << ", " << d << ", " << k << ", " << gk.x() << " : " << gk.y() << std::endl;
-            pi.rho += k; });
+        boundaryFunc(i, [&rho](auto bpos, auto d, auto k, auto gk, auto triangle) {
+            rho += k; });
 
+        fluidDensity[i] = rho;
     }
 }
-
-void computeVorticity() {
-#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        scalar voriticity = 0.0;
-
-        for (int32_t j : pi.neighbors) {
-            auto& pj = particles[j];
-            auto grad = gradW(pi.pos, pj.pos);
-            auto vel = pi.vel - pj.vel;
-            auto term = area / pj.rho * (vel.x() * grad.y() - vel.y() * grad.x());
-
-            voriticity += term;
-        }
-        pi.vorticity = voriticity;
-    }
-}
-
-void refineVorticity() {
-    static auto& nu_t = ParameterManager::instance().get<scalar>("vorticity.nu_t");
-    static auto& intertiaInverse = ParameterManager::instance().get<scalar>("vorticity.inverseInertia");
-    static auto& angularViscosity = ParameterManager::instance().get<scalar>("vorticity.angularViscosity");
-
-    std::vector<scalar> dwdt(particles.size(), 0.0);
-    std::vector<vec> dvdt(particles.size(), vec(0.0, 0.0));
-#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        scalar voriticity = 0.0;
-        vec vterm(0.0, 0.0);
-
-        for (int32_t j : pi.neighbors) {
-            auto& pj = particles[j];
-            auto grad = gradW(pi.pos, pj.pos);
-            auto vel = pi.vel - pj.vel;
-            auto vor = pi.angularVelocity - pj.angularVelocity;
-            auto term = area / pj.rho * (vel.x() * grad.y() - vel.y() * grad.x());
-
-            voriticity += term;
-            vterm.x() += area / pj.rho * (-vor * grad.y());
-            vterm.y() += area / pj.rho * (vor * grad.x());
+void SPHSimulation::Integrate(){
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+    auto& dt = pm.get<scalar>("sim.dt");
 
 
-        }
-        dwdt[i] = nu_t * (voriticity - 2.0 * pi.angularVelocity) * intertiaInverse;
-        dvdt[i] = nu_t * vterm;
-    }
-
-#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        pi.angularVelocity += dwdt[i] * dt;
-        pi.vel += dvdt[i] * dt;
-    }
-
-#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        scalar angularTerm = 0.0;
-        for (int32_t j : pi.neighbors) {
-            auto& pj = particles[j];
-            auto kernel = W(pi.pos, pj.pos);
-            auto vor = pj.angularVelocity - pi.angularVelocity;
-            auto term = area / pj.rho * vor * kernel;
-            angularTerm += term;
-        }
-        dwdt[i] = angularViscosity * angularTerm;
-    }
-#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        pi.angularVelocity += dwdt[i];
-    }
-
-    //    static auto& nu_t = ParameterManager::instance().get<scalar>("vorticity.nu_t");
-    //    static auto& intertiaInverse = ParameterManager::instance().get<scalar>("vorticity.inverseInertia");
-    //    static auto& angularViscosity = ParameterManager::instance().get<scalar>("vorticity.angularViscosity");
-    //
-    //    std::vector<scalar> newVorticity(particles.size(), 0.0), estVorticity(particles.size(), 0.0);
-    //    std::vector<scalar> dissipation(particles.size(), 0.0);
-    //    std::vector<scalar> streamFn(particles.size(), 0.0);
-    //    std::vector<scalar> dwdt(particles.size(), 0.0);
-    //    std::vector<vec> dvdt(particles.size(), vec(0.0,0.0));
-    //    // Vorticity through linear field
-    //#pragma omp parallel for
-    //    for (int32_t i = 0; i < particles.size(); ++i) {
-    //        auto& pi = particles[i];
-    //        scalar voriticity = 0.0;
-    //        vec vterm(0.0, 0.0);
-    //
-    //        for (int32_t j : pi.neighbors) {
-    //            auto& pj = particles[j];
-    //            auto grad = gradW(pi.pos, pj.pos);
-    //            auto vel = pi.vel - pj.vel;
-    //            auto vor = pi.angularVelocity - pj.angularVelocity;
-    //            auto term = area / pj.rho * (vel.x() * grad.y() - vel.y() * grad.x());
-    //
-    //            voriticity += term;
-    //        }
-    //        newVorticity[i] = voriticity;
-    //    }
-    //    // Vorticity Equation
-    //#pragma omp parallel for
-    //    for (int32_t i = 0; i < particles.size(); ++i) {
-    //        auto& pi = particles[i];
-    //        scalar voriticity = 0.0;
-    //        scalar vterm = 0.0;
-    //
-    //        for (int32_t j : pi.neighbors) {
-    //            if (i == j) continue;
-    //            auto& pj = particles[j];
-    //            auto grad = gradW(pi.pos, pj.pos);
-    //            auto diff = pi.pos - pj.pos;
-    //            auto vel = pi.vel - pj.vel;
-    //            auto vor = pi.angularVelocity - pj.angularVelocity;
-    //            auto term = area / pj.rho * vor * grad.norm() / diff.norm();
-    //
-    //            voriticity += area / pj.rho * vor * vel.dot(grad);
-    //            vterm += -area / pj.rho * vor * 2.0 * grad.norm() / (diff.norm() + 0.01 * support * support);
-    //        }
-    //        dwdt[i] = voriticity + 0.2 * vterm;
-    //        estVorticity[i] = pi.vorticity + dwdt[i] * dt;
-    //        dissipation[i] = estVorticity[i] - newVorticity[i];
-    //        //std::cout << i << ": " << pi.vorticity << " -> " << estVorticity[i] << " : " << dissipation[i] << " => " << voriticity << " : " << vterm << " --> " << dwdt[i] << std::endl;
-    //    }
-    //    // stream function
-    //#pragma omp parallel for
-    //    for (int32_t i = 0; i < particles.size(); ++i) {
-    //        auto& pi = particles[i];
-    //        scalar voriticity = 0.0;
-    //        vec vterm(0.0, 0.0);
-    //
-    //        for (int32_t j : pi.neighbors) {
-    //            if (i == j) continue;
-    //            auto& pj = particles[j];
-    //            auto diff = pi.pos - pj.pos;
-    //
-    //            voriticity += 1.0 / (4.0 * M_PI) * dissipation[j] * area / diff.norm();
-    //        }
-    //        streamFn[i] = voriticity;
-    //    }
-    //
-    //#pragma omp parallel for
-    //    for (int32_t i = 0; i < particles.size(); ++i) {
-    //        auto& pi = particles[i];
-    //        vec vterm = vec(0.0,0.0);
-    //        for (int32_t j : pi.neighbors) {
-    //            auto& pj = particles[j];
-    //            auto grad = gradW(pi.pos, pj.pos);
-    //            auto vor = streamFn[i] - streamFn[j];
-    //
-    //            vterm.x() += area / pj.rho * (- vor * grad.y());
-    //            vterm.y() += area / pj.rho * (  vor * grad.x());
-    //        }
-    //        dvdt[i] = vterm;
-    //        vterm *= 1.0;
-    //        pi.angularVelocity = pi.vorticity;
-    //        pi.vel += vterm;
-    //        //            vterm.x() += area / pj.rho * (- vor * grad.y());
-    //        //            vterm.y() += area / pj.rho * (  vor * grad.x());
-    //    }
-    //
-
-
-}
-
-
-void externalForces() {
-    if (gravitySwitch)
-        for (auto& p : particles)
-            p.accel += gravity;
-    auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
-    if (scenarioConfig == scenario::lid)
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& p = particles[i];
-        if (p.pos.y() >= domainHeight - domainEpsilon - support * 4.)
-            p.accel.x() = -(p.vel.x() - speed)/ dt / 10.;
-    }
-}
-
-void XSPH() {
-    static auto& viscosityConstant = ParameterManager::instance().get<scalar>("ptcl.viscosityConstant");
-    std::vector<vec> tempV;
-    //#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        tempV.push_back(pi.vel);
-        for (auto& j : pi.neighbors) {
-            auto& pj = particles[j];
-            tempV[i] += viscosityConstant * (pi.rho + pj.rho) * area / (pi.rho + pj.rho) * scalar(2.0) * W(pi.pos, pj.pos) * (pj.vel - pi.vel);
-        }
-    }
-#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i)
-        particles[i].vel = tempV[i];
-}
-
-scalar sdpoly(std::vector<vec> v, vec p) {
-    scalar d = (p - v[0]).dot(p - v[0]);
-    scalar s = 1.0;
-    for (int i = 0, j = v.size() - 1; i < v.size(); j = i, i++) {
-        vec e = v[j] - v[i];
-        vec w = p - v[i];
-        vec b = w - e * std::clamp(w.dot(e) / e.dot(e), 0.0, 1.0);
-        d = std::min(d, b.dot(b));
-        bool b1 = p.y() >= v[i].y();
-        bool b2 = p.y() < v[j].y();
-        bool b3 = e.x() * w.y() > e.y() * w.x();
-        if ((b1 && b2 && b3) || (!b1 && !b2 && !b3))
-            s *= -1.0;
-    }
-    return s * sqrt(d);
-}
-
-void Integrate(void) {
-    auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
-    auto speed2 = ParameterManager::instance().get<scalar>("sim.inletSpeed");
-    auto speedGoal = ParameterManager::instance().get<scalar>("sim.inletSpeedGoal");
-    static auto& time = ParameterManager::instance().get<scalar>("sim.time");
-    auto delay = 0.13;
-    if (time < delay)
-        speed2 = 0.0;
-    else
-        speed2 = ParameterManager::instance().get<scalar>("sim.inletSpeed");
-    //else if (time < 1.0 + delay) {
-    //    speed2 = speedGoal * (time - delay);
-    //}
-
-    //speed2 = speed;
-
-    auto particlesGen2 = genParticles(vec(domainWidth - 2.5 * domainEpsilon, domainEpsilon + spacing_2D), vec(domainWidth - domainEpsilon, domainHeight - domainEpsilon - spacing_2D));
-    //auto particlesGen2 = genParticles(vec(domainWidth - 24.5 / domainScale, m - t), vec(domainWidth - 19.5 / domainScale, m + t));
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& p = particles[i];
-        if (outletSwitch)
-            if (p.pos.x() > domainWidth - 2. * domainEpsilon) {
-                p.vel = vec(speed2, 0.0);
-                p.angularVelocity = 0.0;
-                p.accel = vec(0.0, 0.0);
-            }
-        if (inletSwitch)
-            if (p.pos.x() < 2. * domainEpsilon) {
-                p.vel = vec(speed, 0.0);
-                p.angularVelocity = 0.0;
-                p.accel = vec(0.0, 0.0);
-            }
-
-        //auto [ix, iy] = getCellIdx(p.pos.x(), p.pos.y());
-        //bool emit = true;
-        ////std::cout << p.pos.x() << " x " << p.pos.y() << " -> " << ix << " : " << iy << std::endl;
-        //for (int32_t xi = -1; xi <= 1; ++xi) {
-        //    for (int32_t yi = -1; yi <= 1; ++yi) {
-        //        const auto& cell = getCell(ix + xi, iy + yi);
-        //        for (auto j : cell) {
-        //            auto& pj = particles[j];
-        //            vec r = pj.pos - p.pos;
-        //            if (r.squaredNorm() <= 0.9 * 2.0 * 2.0 * packing_2D * packing_2D) {
-        //                emit = false;
-        //            }
-        //        }
-        //    }
-        //}
-
-
-        ////p.vel = vec(speed, 0);
-        ////if (emit) {
-        ////    p.uid = uidCounter++;
-        ////    particles.push_back(p);
-        ////    particlesDFSPH.push_back(dfsphState{});
-        ////}
-    }
-    //auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
-    ////auto dt = ParameterManager::instance().get<scalar>("sim.dt");
-    //static scalar offset = 0.0;
-    //offset = std::fmod(offset + dt * speed, packing_2D);
-
-    //auto m = (domainHeight - 10.0 / domainScale) / 2.0 + domainEpsilon;
-    ////auto t = 12.5 / domainScale;
-    //auto eps = scale / sqrt(2) * 0.2;
-    //auto particlesGen = genParticles(vec(domainEpsilon + spacing_2D, domainEpsilon + spacing_2D), vec(domainEpsilon + 5.0 / domainScale, domainHeight - domainEpsilon - spacing_2D));
-    ////auto particlesGen = genParticles(vec(15.5 / domainScale, m - t), vec(19.5 / domainScale, m + t));
-    //for (auto& p : particlesGen) {
-    //    auto [ix, iy] = getCellIdx(p.pos.x(), p.pos.y());
-    //    bool emit = true;
-    //    //std::cout << p.pos.x() << " x " << p.pos.y() << " -> " << ix << " : " << iy << std::endl;
-    //    for (int32_t xi = -1; xi <= 1; ++xi) {
-    //        for (int32_t yi = -1; yi <= 1; ++yi) {
-    //            const auto& cell = getCell(ix + xi, iy + yi);
-    //            for (auto j : cell) {
-    //                auto& pj = particles[j];
-    //                vec r = pj.pos - p.pos;
-    //                if (r.squaredNorm() <= 0.99 * 2.0 * 2.0 * packing_2D * packing_2D) {
-    //                    emit = false;
-    //                    pj.vel = vec(speed, 0.0);
-    //                    pj.angularVelocity = 0.0;
-    //                }
-    //            }
-    //        }
-    //    }
-
-
-    //    p.vel = vec(speed, 0);
-    //}
-
-    //auto speed2 = ParameterManager::instance().get<scalar>("sim.inletSpeed");
-    //auto speedGoal = ParameterManager::instance().get<scalar>("sim.inletSpeedGoal");
-    //static auto& time = ParameterManager::instance().get<scalar>("sim.time");
-    //if (time < 0.25)
-    //    speed2 = 0.0;
-    //else if (time < 2.0) {
-    //    speed2 = speedGoal * time / 2.0;
-    //}
-
-    //speed2 = speed;
-
-    //auto particlesGen2 = genParticles(vec(domainWidth - 2.5 * domainEpsilon, domainEpsilon + spacing_2D), vec(domainWidth - domainEpsilon, domainHeight - domainEpsilon - spacing_2D));
-    ////auto particlesGen2 = genParticles(vec(domainWidth - 24.5 / domainScale, m - t), vec(domainWidth - 19.5 / domainScale, m + t));
-    //for (auto& p : particlesGen2) {
-    //    auto [ix, iy] = getCellIdx(p.pos.x(), p.pos.y());
-    //    bool emit = true;
-    //    //std::cout << p.pos.x() << " x " << p.pos.y() << " -> " << ix << " : " << iy << std::endl;
-    //    for (int32_t xi = -1; xi <= 1; ++xi) {
-    //        for (int32_t yi = -1; yi <= 1; ++yi) {
-    //            const auto& cell = getCell(ix + xi, iy + yi);
-    //            for (auto j : cell) {
-    //                auto& pj = particles[j];
-    //                vec r = pj.pos - p.pos;
-    //                if (r.squaredNorm() <= 0.99 * 2.0 * 2.0 * packing_2D * packing_2D) {
-    //                    emit = false;
-    //                    pj.vel = vec(speed2, 0.0);
-    //                    pj.angularVelocity = 0.0;
-    //                }
-    //            }
-    //        }
-    //    }
-
-
-    //    //p.vel = vec(speed, 0);
-    //    //if (emit) {
-    //    //    p.uid = uidCounter++;
-    //    //    particles.push_back(p);
-    //    //    particlesDFSPH.push_back(dfsphState{});
-    //    //}
-    //}
-
-    ////    auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
-    ////std::vector<Particle> filteredParticles;
-    ////filteredParticles.reserve(particles.size());
-    ////for (auto& p : particles) {
-    ////}
-
-    scalar vMax = 0.0;
-    //static auto& dt = ParameterManager::instance().get<scalar>("sim.dt");
-    static auto& damping = ParameterManager::instance().get<scalar>("props.damping");
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& p = particles[i];
-        p.vel += dt * p.accel;
-        vMax = std::max(vMax, p.vel.norm());
-    }
-
-
-#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& p = particles[i];
-        //if (p.pos.x() < domainEpsilon * 2.0)
-         //   p.vel = vec(speed, 0.0);
-
-        auto pos = p.pos;
-        int32_t it = 0;
-        for (auto Poly : obstacles) {
-            it++;
-            //if (it != 3) continue;
-            scalar d = sdpoly(Poly, pos);
-            scalar dx = sdpoly(Poly, pos + vec(0.001, 0.0));
-            scalar dy = sdpoly(Poly, pos + vec(0.0, 0.001));
-            vec grad = vec(dx - d, dy - d) / 0.001;
-            vec n = grad.normalized();
-            vec vortho = (p.vel.dot(n)) * n;
-            vec vtangent = p.vel - vortho;
-            auto nd = std::max(d, 0.0) / (scale);
-            if (d < scale) {
-                //vtangent *= nd;
-                //vtangent *= 0.0;
-                //p.vel = vortho + vtangent;
-            }
-        }
-
-        // shifting starts here
-
-        //int32_t N_i = 0;
-        //scalar r_i = 0.0;
-        //vec X_i(0., 0.);
-        //scalar v_local_max = 0.0, vel_gradient = 0.0;
-        //for (int32_t j : p.neighbors) {
-        //    auto& pj = particles[j];
-        //    vel_gradient += area / pj.rho * (pj.vel - p.vel).dot(gradW(p.pos, pj.pos));
-        //    v_local_max = std::max(v_local_max, pj.vel.norm());
-        //    if (i == j)
-        //        continue;
-        //    scalar x_ij = (p.pos - pj.pos).norm();
-        //    r_i += x_ij;
-        //    N_i++;
-        //    X_i += (p.pos - pj.pos) / (x_ij * x_ij * x_ij);
-        //}
-        //r_i /= N_i;
-        //vec X_irr = X_i * r_i * r_i;
-
-        //scalar C = 0.004;
-        //scalar a = vMax * dt * C;
-        //scalar b = v_local_max * dt * C;
-        //scalar d = r_i * 0.001 / dt;
-        //scalar f = std::max(b, d);
-        //scalar Cdash = std::min(a, f);
-        //vec delta_ii = Cdash * X_irr;
-        //scalar delta_ii_l = delta_ii.norm();
-        //if (N_i < 5)
-        //    delta_ii = vec(0.0, 0.0);
-        //if(p.pos.x() > 2. * domainEpsilon && p.pos.x() < domainWidth - 2. * domainEpsilon)
-        //if (delta_ii_l < 0.75 * support) {
-        //    p.pos += delta_ii;
-        //    p.vel = p.vel + delta_ii * vel_gradient;
-        //}
-
-        scalar k0 = W(vec(0, 0), vec(packing_2D, 0));
-        vec X_i(0., 0.);
-        scalar v_local_max = 0.0, vel_gradient = 0.0;
-        for (int32_t j : p.neighbors) {
-            auto& pj = particles[j];
-            scalar R = 0.2;
-            scalar X_ij = 0.2 * std::pow((W(p.pos, pj.pos) / k0), 4.0);
-            vel_gradient += area / pj.rho * (pj.vel - p.vel).dot(gradW(p.pos, pj.pos));
-            X_i += area / pj.rho * (1 + X_ij) * gradW(p.pos, pj.pos) * scale * scale;
-            v_local_max = std::max(v_local_max, pj.vel.norm());
-        }
-
-        scalar C = 250.0; // speed of sound in m/s
-
-        auto Ma = vMax / C;
-        auto kCFL = C / scale * dt;
-
-        X_i *= -2.0 * kCFL * Ma;
-        auto X_il = X_i.norm();
-        auto limit = 0.1 * vMax * dt;
-
-        if (X_il > limit)
-            X_i = X_i / X_il * limit;
-
-
-        // shifting ends here
-
-        //if (delta_ii_l < 0.75f * math::unit_get<4>(p))
-        //    arrays.position.second[i] = p + delta_ii;
+        auto& time = pm.get<scalar>("sim.time");
+        auto delay = 0.13;
+        //if (time < delay)
+        //    speed2 = 0.0;
         //else
-        //    arrays.position.second[i] = p;
-        //if (delta_ii_l < 0.75f * math::unit_get<4>(p))
-        //    arrays.velocity.first[i] = v + delta_ii * vel_gradient;
-        //else
-        //    arrays.velocity.first[i] = v;
-
-        //std::cout << "[" << p.pos.x() << ", " << p.pos.y() << "] + [" << (dt * p.vel.x()) << ", " << dt * p.vel.y() << "] + [" << X_i.x() << ", " << X_i.y() << "]" << " @ " << kCFL << " : " << Ma << std::endl;
-
-
-        //auto dist = DBL_MAX;
-        //auto x = p.pos;
-        //boundaryFunc(p.pos, [&dist](auto bpos, auto d, auto k, auto gk, auto triangle) { dist = std::min(dist,d); });
-        //if (p.pos.x() > domainWidth - 3. * domainEpsilon || p.pos.x() < 2. * domainEpsilon)
-        //    p.pos += dt * p.vel;
-        //else if (dist < scale) {
-        //    boundaryFunc(p.pos, [&X_i, &x, &dist](auto bpos, auto d, auto k, auto gk, auto triangle) {
-        //        vec n = x - bpos;
-        //        if(n.norm() > 1e-5)
-        //            n = n / n.norm();
-
-        //        vec vortho = (X_i.dot(n)) * n;
-        //        vec vtangent = X_i - vortho;
-        //        auto nd = std::max(d, 0.0) / (scale);
-        //        if (d < scale) {
-        //            vortho *= 0.0;
-        //            X_i = vortho + vtangent;
-        //        }
-        //        });
-        //    p.pos += dt * p.vel;
-        //    p.vel = p.vel;
+        //else if (time < 1.0 + delay) {
+        //    speed2 = speedGoal * (time - delay);
         //}
-        //else {
-        //    p.pos += dt * p.vel + X_i;
-        //    p.vel = p.vel + X_i * vel_gradient;
-        //}
+    
+        //speed2 = speed;
+        auto spacing_2D = 0.23999418487168855;
 
-        p.pos += dt * p.vel;
-        p.vel = p.vel * (1. - damping);
+        for(auto& source : fluidSources){
+            if(source.emitter != emitter_t::inlet && source.emitter != emitter_t::velocitySource) continue;
+            
+        if(source.timeLimit > 0. && time > source.timeLimit) continue;
+    vec center = (source.emitterMin + source.emitterMax) / 2.;
+    vec pdiff = (source.emitterMax - source.emitterMin) / 2.;
+    scalar radius = std::min(pdiff.x(), pdiff.y());
+
+            for (int32_t i = 0; i < numPtcls; ++i) {
+                auto pos = fluidPosition[i];
+                auto speed = source.emitterRampTime > 0. ? std::clamp(time / source.emitterRampTime, 0., 1.) * source.emitterVelocity.norm() : source.emitterVelocity.norm();
+
+                if(source.shape == shape_t::rectangular)
+                if(pos.x() < source.emitterMax.x() && pos.x() > source.emitterMin.x() && pos.y() < source.emitterMax.y() && pos.y() > source.emitterMin.y()){
+                    fluidVelocity[i] = source.emitterVelocity.normalized() * speed;
+                    fluidAngularVelocity[i] = 0.;
+                    fluidAccel[i] = vec(0.,0.);
+                }
+                if(source.shape == shape_t::spherical){
+                auto d = pos - center;
+                auto l = d.norm();
+                //std::cout << pos.x() << " " << pos.y() << " -> " << d.x() << " " << d.y() << " -> " << l << " / " << radius << " -> " <<(l>= radius) << std::endl;
+                if (l >= radius) continue;
+                    fluidVelocity[i] = source.emitterVelocity.normalized() * speed;
+                    fluidAngularVelocity[i] = 0.;
+                    fluidAccel[i] = vec(0.,0.);
+                }
+            }
+
+        }
 
 
-
-        //auto m = (domainHeight - 10.0 / domainScale) / 2.0 + domainEpsilon;
-        //auto t = 12.5 / domainScale;
-
-        //vec begin(domainEpsilon + 10 / domainScale, m - t);
-        //vec end(domainWidth - 10 / domainScale, m + t);
-        //vec mid = (end + begin) * 0.5;
-        //mid.x() -= 25.0 / domainScale;
-
-        //auto thickness = 1.0 / domainScale;
-        //auto c = 4. / domainScale;
-
-        //vec center = mid;
-
-        //vec dist = p.pos - center;
-        //scalar d = dist.norm() - 3.0 / domainScale;
-        //auto grad = dist.normalized();
-        //vec n = grad.normalized();
-        //vec vortho = (p.vel.dot(n)) * n;
-        //vec vtangent = p.vel - vortho;
-        //auto nd = std::max(d, 0.0) / (scale);
-        //if (d <scale) {
-        //    vtangent *= nd;
-        //    //vtangent *= 0.0;
-        //    p.vel = vortho + vtangent;
-        //}
-
-
-        //if (p.vel.norm() > 1e2)
-        //	printParticle(i);
-    }
-    simulationTime += dt;
-    static auto& t = ParameterManager::instance().get<scalar>("sim.time");
-    static auto& vMaxr = ParameterManager::instance().get<scalar>("ptcl.maxVelocity");
-    vMaxr = vMax;
-    t = simulationTime;
-    static auto& dtmin = ParameterManager::instance().get<scalar>("sim.minDt");
-    static auto& dtmax = ParameterManager::instance().get<scalar>("sim.maxDt");
-    dt = std::clamp(0.4 * support / vMax, dtmin, dtmax);
-    static auto& dtr = ParameterManager::instance().get<scalar>("sim.dt");
-    dtr = dt;
-}
-#include <iomanip>
-
-void computeAlpha(bool density) {
+        auto& damping = pm.get<scalar>("props.damping");
 #pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        auto& di = particlesDFSPH[i];
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        auto& pi = fluidPosition[i];
+        auto& vi = fluidVelocity[i];
+        auto& ai = fluidAccel[i];
+        vi += dt * ai;
+        vi *= (1.0 - damping);
+        pi += dt * vi;
+    }
+
+        scalar vMax = 0.0;
+        scalar minH = DBL_MAX;
+        //auto& dt = pm.get<scalar>("sim.dt");
+        for (int32_t i = 0; i < numPtcls; ++i) {
+            vMax = std::max(vMax,fluidVelocity[i].norm());
+            minH = std::min(minH, fluidSupport[i]);
+        }
+    
+
+        auto& t = pm.get<scalar>("sim.time");
+        t += dt;
+        pm.get<int32_t>("sim.frame")++;
+        auto& vMaxr = pm.get<scalar>("ptcl.maxVelocity");
+        vMaxr = vMax;
+        auto& dtmin = pm.get<scalar>("sim.minDt");
+        auto& dtmax = pm.get<scalar>("sim.maxDt");
+        dt = std::clamp(0.4 * minH / vMax, dtmin, dtmax);
+}
+
+
+#define rhoj fluidRestDensity[i]
+// #define rhoj fluidRestDensity[j]
+
+void SPHSimulation::XSPH(){
+     auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+     auto& viscosityConstant = pm.get<scalar>("ptcl.viscosityConstant");
+     auto& boundaryViscosity = pm.get<scalar>("ptcl.boundaryViscosity");
+     std::vector<vec> tempV;
+     //#pragma omp parallel for
+     for (int32_t i = 0; i < numPtcls; ++i) {
+         auto& pi = fluidPosition[i];
+         auto& vi = fluidVelocity[i];
+         auto& hi = fluidSupport[i];
+         tempV.push_back(fluidVelocity[i]);
+         for (auto& j : fluidNeighborList[i]) {
+             auto& pj = fluidPosition[j];
+             auto& hj = fluidSupport[j];
+             tempV[i] += viscosityConstant * (fluidDensity[i] + fluidDensity[j]) * fluidArea[j] / 
+                 (fluidDensity[i] + fluidDensity[j]) * scalar(2.0) * W(pi, pj, hi, hj) * (fluidVelocity[j] - fluidVelocity[i]);
+         }
+     }
+
+ #pragma omp parallel for
+     for (int32_t i = 0; i < numPtcls; ++i)
+         fluidVelocity[i] = tempV[i];
+
+
+}
+void SPHSimulation::computeAlpha(bool density){
+    auto& dt = pm.get<scalar>("sim.dt");
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+#pragma omp parallel for
+    for (int32_t i = 0; i < numPtcls; ++i) {
         vec kernelSum1(0, 0);
         scalar kernelSum2 = 0.0;
         if (density)
-            boundaryFunc(pi, [&pi, &kernelSum1, &kernelSum2](auto bpos, auto d, auto k, auto gk, auto triangle) { kernelSum1 += gk; });
-        for (int32_t j : pi.neighbors) {
-            auto& pj = particles[j];
-            auto& dj = particlesDFSPH[j];
-            vec kernel = gradW(pi.pos, pj.pos);
-            kernelSum1 += dj.area * kernel;
-            kernelSum2 += dj.area * dj.area / mass * kernel.dot(kernel);
+            boundaryFunc(i, [&kernelSum1, &kernelSum2](auto bpos, auto d, auto k, auto gk, auto triangle) { kernelSum1 += gk; });
+        for (int32_t j : fluidNeighborList[i]) {
+            vec kernel = gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]);
+            kernelSum1 += fluidActualArea[j] * kernel;
+            kernelSum2 += fluidActualArea[j] * fluidActualArea[j] / (fluidArea[j] * rhoj) * kernel.dot(kernel);
         }
-        di.alpha = -dt * dt * di.area / mass * kernelSum1.dot(kernelSum1) - dt * dt * di.area * kernelSum2;
-        if (std::abs(di.alpha) > 1.0) {
-            boundaryFunc(pi, [&pi, &kernelSum1, &kernelSum2](auto pb, auto d, auto k, auto gk, auto triangle) {
-                kernelSum1 += gk;
-                if (triangle)
-                    std::cout << "Triangle:" << std::endl;
-                std::cout << std::setprecision(12) << pi.pos.x() << " : " << std::setprecision(12) << pi.pos.y() << " -> " << pb.x() << " : " << pb.y() << " @ " << d << " => " << d << ", " << k << " ==> " << gk.x() << " : " << gk.y() << std::endl;
-                });
-
-        }
+        fluidAlpha[i] = -dt * dt * fluidActualArea[i] / (fluidArea[i] * fluidRestDensity[i]) * kernelSum1.dot(kernelSum1) - dt * dt * fluidActualArea[i] * kernelSum2;
+   
     }
 }
-void computeSourceTerm(bool density) {
+void SPHSimulation::computeSourceTerm(bool density){
+    auto& dt = pm.get<scalar>("sim.dt");
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
 #pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        auto& di = particlesDFSPH[i];
-        scalar sourceTerm = density ? scalar(1.0) - pi.rho : scalar(0.0);
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        scalar sourceTerm = density ? scalar(1.0) - fluidDensity[i] : scalar(0.0);
         if (density)
-            boundaryFunc(pi, [&di, &sourceTerm](auto bpos, auto d, auto k, auto gk, auto triangle) {
-            sourceTerm = sourceTerm - dt * di.vel.dot(gk);
+            boundaryFunc(i, [this,i, dt, &sourceTerm](auto bpos, auto d, auto k, auto gk, auto triangle) {
+            sourceTerm = sourceTerm - dt * fluidPredVelocity[i].dot(gk);
                 });
-        for (int32_t j : pi.neighbors) {
-            auto& pj = particles[j];
-            auto& dj = particlesDFSPH[j];
-            sourceTerm -= dt * dj.area * (di.vel - dj.vel).dot(gradW(pi.pos, pj.pos));
+        for (int32_t j : fluidNeighborList[i]) {
+            sourceTerm -= dt * fluidActualArea[j] * (fluidPredVelocity[i] - fluidPredVelocity[j]).dot(gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]));
         }
-        di.source = sourceTerm;
-        di.pressure2 = (scalar)0.0;
+        fluidSourceTerm[i] = sourceTerm;
+        fluidPressure2[i] = (scalar)0.0;
     }
 }
-void computeAcceleration(bool density) {
+void SPHSimulation::computeAcceleration(bool density){
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
 #pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        auto& di = particlesDFSPH[i];
+    for (int32_t i = 0; i < numPtcls; ++i) {
         vec kernelSum((scalar)0.0, (scalar)0.0);
-        for (int32_t j : pi.neighbors) {
-            auto& pj = particles[j];
-            auto& dj = particlesDFSPH[j];
-            kernelSum += -mass * (di.pressure2 / power(pi.rho * rho0, 2) + dj.pressure2 / power(pj.rho * rho0, 2)) *
-                gradW(pi.pos, pj.pos);
+        for (int32_t j : fluidNeighborList[i]) {
+            kernelSum += -fluidArea[j]* rhoj * (fluidPressure2[i] / power(fluidDensity[i] * fluidRestDensity[i], 2) + fluidPressure2[j] / power(fluidDensity[j] * rhoj, 2)) *
+                gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]);
         }
-        di.accel += kernelSum;
-        di.pressure1 = di.pressure2;
+        fluidPredAccel[i] += kernelSum;
+        fluidPressure1[i] = fluidPressure2[i];
     }
 }
-void updatePressure(bool density) {
-    auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
+void SPHSimulation::updatePressure(bool density ){
+    auto& dt = pm.get<scalar>("sim.dt");
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+    auto& backgroundPressureSwitch = pm.get<bool>("props.backgroundPressure");
+    auto& vMaxr = pm.get<scalar>("ptcl.maxVelocity");
 #pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        auto& di = particlesDFSPH[i];
+    for (int32_t i = 0; i < numPtcls; ++i) {
         scalar kernelSum = (scalar)0.0;
         if (density)
-            boundaryFunc(pi,
-                [&di, &kernelSum](auto bpos, auto d, auto k, auto gk, auto triangle) { kernelSum += dt * dt * di.accel.dot(gk); });
-        for (int32_t j : pi.neighbors) {
-            auto& pj = particles[j];
-            auto& dj = particlesDFSPH[j];
-            kernelSum += dt * dt * dj.area * (di.accel - dj.accel).dot(gradW(pi.pos, pj.pos));
+            boundaryFunc(i,
+                [this,dt, i, &kernelSum](auto bpos, auto d, auto k, auto gk, auto triangle) { kernelSum += dt * dt * fluidPredAccel[i].dot(gk); });
+        for (int32_t j : fluidNeighborList[i]) {
+            kernelSum += dt * dt * fluidActualArea[j] * (fluidPredAccel[i] - fluidPredAccel[j]).dot(gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]));
         }
         scalar omega = (scalar)0.5;
-        scalar pressure = di.pressure1 + omega / di.alpha * (di.source - kernelSum);
+        scalar pressure = fluidPressure1[i] + omega / fluidAlpha[i] * (fluidSourceTerm[i] - kernelSum);
         //if(di.pressureBoundary == 0.0)
-        if (backgroundPressureSwitch)
-            pressure += 1.0 * speed * speed * rho0;
+        if (backgroundPressureSwitch && density)
+            pressure += 0.5 * vMaxr * vMaxr * fluidRestDensity[i];
         pressure = density ? std::max(pressure, (scalar)0.0) : pressure;
-        scalar residual = kernelSum - di.source;
-        if (::abs(di.alpha) < 1e-25 || pressure != pressure || pressure > 1e25)
+        scalar residual = kernelSum - fluidSourceTerm[i];
+        if (::abs(fluidAlpha[i]) < 1e-25 || pressure != pressure || pressure > 1e25)
             pressure = residual = 0.0;
         //pressure = std::max(pressure, speed * speed * rho0);
-        di.pressure2 = pressure;
-        di.dpdt = std::max(residual, (scalar)-0.001) * area;
-        di.rhoStar = residual * area;
+        fluidPressure2[i] = pressure;
+        fluidDpDt[i] = std::max(residual, (scalar)-0.001) * fluidArea[i];
+        fluidDensityStar[i] = residual * fluidArea[i];
     }
 }
-scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density) {
+scalar SPHSimulation::calculateBoundaryPressureMLS(int32_t i, vec pb, bool density) {
     vec vecSum(0, 0), d_bar(0, 0);
     matrix M = matrix::Zero();
     scalar sumA = (scalar)0.0, sumB = (scalar)0.0, d_sum = (scalar)0.0;
-
+    auto support = fluidSupport[i];
     int32_t ii = 0;
     auto [ix, iy] = getCellIdx(pb.x(), pb.y());
     for (int32_t xi = -1; xi <= 1; ++xi) {
@@ -670,12 +217,11 @@ scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density) {
             if (yi + iy < 0 || yi + iy >= cellsY) continue;
             const auto& cell = getCell(ix + xi, iy + yi);
             for (auto j : cell) {
-                auto& pj = particles[j];
-                vec r = pj.pos - pb;
+                vec r = fluidPosition[j] - pb;
                 if (r.squaredNorm() <= support * support) {
                     ii++;
-                    scalar fac = area * W(pj.pos, pb);
-                    d_bar += pj.pos * fac;
+                    scalar fac = fluidArea[j] * W(fluidPosition[j], pb, support, support);
+                    d_bar += fluidPosition[j] * fac;
                     d_sum += fac;
                 }
             }
@@ -690,16 +236,14 @@ scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density) {
             if (yi + iy < 0 || yi + iy >= cellsY) continue;
             const auto& cell = getCell(ix + xi, iy + yi);
             for (auto j : cell) {
-                auto& pj = particles[j];
-                auto& dj = particlesDFSPH[j];
-                vec r = pj.pos - pb;
-                if (r.squaredNorm() <= (scalar)1.0) {
-                    scalar Wbbf = W(pj.pos, pb);
-                    vec pjb = pj.pos - d_bar;
+                vec r = fluidPosition[j] - pb;
+                if (r.squaredNorm() <= (scalar)support * support) {
+                    scalar Wbbf = W(fluidPosition[j], pb,support,support);
+                    vec pjb = fluidPosition[j] - d_bar;
                     M += (pjb) * (pjb).transpose();
-                    vecSum += pjb * dj.pressure2 * area * Wbbf;
-                    sumA += dj.pressure2 * area * Wbbf;
-                    sumB += area * Wbbf;
+                    vecSum += pjb * fluidPressure2[j] * fluidArea[j] * Wbbf;
+                    sumA += fluidPressure2[j] * fluidArea[j] * Wbbf;
+                    sumB += fluidArea[j] * Wbbf;
                 }
             }
         }
@@ -713,8 +257,8 @@ scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density) {
     auto beta = Mp(0, 0) * vecSum.x() + Mp(0, 1) * vecSum.y();
     auto gamma = Mp(1, 0) * vecSum.x() + Mp(1, 1) * vecSum.y();
     scalar det = M.determinant();
-    std::cout << std::defaultfloat;
-   // std::cout << alpha << " " << beta << " " << gamma << " [ " << Mp(0, 0) << " " << Mp(0, 1) << " ] [ " << Mp(1, 0) << " " << Mp(1, 1) << " ] " << " " << det << " " << x_b.x() << " " << x_b.y() << "\n";
+    //std::cout << std::defaultfloat;
+    // std::cout << alpha << " " << beta << " " << gamma << " [ " << Mp(0, 0) << " " << Mp(0, 1) << " ] [ " << Mp(1, 0) << " " << Mp(1, 1) << " ] " << " " << det << " " << x_b.x() << " " << x_b.y() << "\n";
     if (det != det)
         beta = gamma = (scalar)0.0;
     auto pressure = alpha + beta * x_b.x() + gamma * x_b.y();
@@ -725,46 +269,47 @@ scalar calculateBoundaryPressureMLS(int32_t i, vec pb, bool density) {
       //  printParticle(i);
     return pressure;
 }
-void computeBoundaryTrianglePressure(bool density) {
-    static auto& baryPressure = ParameterManager::instance().get<bool>("sim.barycentricPressure");
+
+void SPHSimulation::computeBoundaryTrianglePressure(bool density) {
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+    auto& baryPressure = pm.get<bool>("sim.barycentricPressure");
     if (!baryPressure) return;
 #pragma omp parallel for
-    for (int32_t i = 0; i < triangles.size(); ++i) {
-        const auto [t0, t1, t2] = triangles[i];
+    for (int32_t i = 0; i < boundaryTriangles.size(); ++i) {
+        const auto [t0, t1, t2] = boundaryTriangles[i];
         auto f0 = calculateBoundaryPressureMLS(-1, t0, true);
         auto f1 = calculateBoundaryPressureMLS(-1, t1, true);
         auto f2 = calculateBoundaryPressureMLS(-1, t2, true);
-        trianglePressures[i] = std::make_tuple(f0, f1, f2);
+        boundaryBarycentricPressure[i] = std::make_tuple(f0, f1, f2);
     }
 
 }
-void computeBoundaryPressure(bool density) {
-    static auto& baryPressure = ParameterManager::instance().get<bool>("sim.barycentricPressure");
+void SPHSimulation::computeBoundaryPressure(bool density ){
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+    auto& baryPressure = pm.get<bool>("sim.barycentricPressure");
 #pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        auto& di = particlesDFSPH[i];
-        di.pressureBoundary = 0.0;
-        di.accel = vec(0, 0);
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        fluidBoundaryPressure[i] = 0.0;
+        fluidPredAccel[i] = vec(0, 0);
         if (!density)
             continue;
 
         if (baryPressure) {
-            for (auto ti : pi.neighborTriangles) {
-                const auto& tri = triangles[ti];
-                auto [f0, f1, f2] = trianglePressures[ti];
-                scalar fluidPressure = density ? std::max((scalar)0.0, di.pressure2) : di.pressure2;
-                auto [pb, d] = closestPointTriangle(pi.pos, tri);
+            for (auto ti : fluidTriangleNeighborList[i]) {
+                const auto& tri = boundaryTriangles[ti];
+                auto [f0, f1, f2] = boundaryBarycentricPressure[ti];
+                scalar fluidPressure = density ? std::max((scalar)0.0, fluidPressure2[i]) : fluidPressure2[i];
+                auto [pb, d] = closestPointTriangle(fluidPosition[i], tri);
                 scalar pressure = calculateBoundaryPressureMLS(0, pb, density);
                 //f0 = f1 = f2 = pressure;
                 //f0 = std::max(f0,std::max(f1, f2));
                 //f1 = f2 = f0;
-                auto [hit, pb2, d2, k, gk] = interactTriangleBaryCentric(pi.pos, tri, pi.rho * rho0, fluidPressure, f0, f1, f2);
-                //auto [hit2, pb3, d3, k3, gk3] = interactTriangle(pi.pos, tri);
+                auto [hit, pb2, d2, k, gk] = interactTriangleBaryCentric(fluidPosition[i], fluidSupport[i], fluidRestDensity[i], tri, fluidDensity[i] * fluidRestDensity[i], fluidPressure, f0, f1, f2);
+                //auto [hit2, pb3, d3, k3, gk3] = interactTriangle(fluidPosition[i], tri);
 
 
                 if (hit) {
-                    //auto [hit, pb, d, k2, gk2] = interactTriangleBaryCentric(pi.pos, tri, pi.rho * rho0, fluidPressure, pressure, pressure, pressure);
+                    //auto [hit, pb, d, k2, gk2] = interactTriangleBaryCentric(fluidPosition[i], tri, fluidDensity[i] * rho0, fluidPressure, pressure, pressure, pressure);
                     //std::cout << "Hit Triangle!!!!\n\n\n\n";
                     //if (std::abs(gk.norm() - gk2.norm())>1e-2)
                     //{
@@ -772,66 +317,53 @@ void computeBoundaryPressure(bool density) {
                     //    std::cout << std::setprecision(5) << f0 << " " << f1 << " " << f2 << " -> " << pressure << " => " << k << " @ [ " << gk.x() << " " << gk.y() << "] : " << k3 << " @ [ " << gk3.x() << " " << gk3.y() << "] : ";
                     //    std::cout << k2 << " @ [ " << gk2.x() << " " << gk2.y() << "] \n";
                     //}
-                    di.accel += -scalar(1.0) * gk;
+                    fluidPredAccel[i] += -scalar(1.0) * gk;
                 }
                 //if (f0 > 1e12 || f1 > 1e12 || f2 > 1e12) {
                 //    std::cout << std::defaultfloat;
                 //    std::cout << "\n\n";
                 //    std::cout << f0 << " " << f1 << " " << f2 << " - " << fluidPressure << std::endl;
-                //    std::cout << pi.pos.x() << " : " << pi.pos.y() << " -> " << pb.x() << " : " << pb.y() << " @ " << d << " => " << d << ", " << k << " ==> " << gk.x() << " : " << gk.y() << std::endl;
+                //    std::cout << fluidPosition[i].x() << " : " << fluidPosition[i].y() << " -> " << pb.x() << " : " << pb.y() << " @ " << d << " => " << d << ", " << k << " ==> " << gk.x() << " : " << gk.y() << std::endl;
                 //    printParticle(i);
                 //}
 
-                di.pressureBoundary += f0 + f1 + f2;
+                fluidBoundaryPressure[i] += f0 + f1 + f2;
             }
         }
         else {
-            boundaryFunc(pi, [&](auto pb, auto d, auto k, auto gk, auto triangle) {
+            boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle) {
                 scalar pressure = calculateBoundaryPressureMLS(i, pb, density);
-                scalar fluidPressure = density ? std::max((scalar)0.0, di.pressure2) : di.pressure2;
+                scalar fluidPressure = density ? std::max((scalar)0.0, fluidPressure2[i]) : fluidPressure2[i];
                 scalar boundaryPressure = density ? std::max((scalar)0.0, pressure) : pressure;
                 // boundaryPressure = fluidPressure;
-                di.pressureBoundary += boundaryPressure;
-                di.accel +=
-                    -scalar(1.0) * rho0 * (fluidPressure / power(pi.rho * rho0, 2) + boundaryPressure / (rho0 * rho0)) * gk;
-                if (boundaryPressure > 1e12 && triangle) {
-                    std::cout << pi.pos.x() << " : " << pi.pos.y() << " -> " << pb.x() << " : " << pb.y() << " @ " << d << " => " << d << ", " << k << " ==> " << gk.x() << " : " << gk.y() << std::endl;
-                    printParticle(i);
-                }
+                fluidBoundaryPressure[i] += boundaryPressure;
+                fluidPredAccel[i] +=
+                    -scalar(1.0) * fluidRestDensity[i] * (fluidPressure / power(fluidDensity[i] * fluidRestDensity[i], 2) + boundaryPressure / (fluidRestDensity[i] * fluidRestDensity[i])) * gk;
                 });
         }
     }
 }
-void predictVelocity(bool density) {
+void SPHSimulation::predictVelocity(bool density ){
+    auto& dt = pm.get<scalar>("sim.dt");
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
 #pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        auto& di = particlesDFSPH[i];
-        di.vel = pi.vel + dt * pi.accel;
-        di.area = area / pi.rho;
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        fluidPredVelocity[i] = fluidVelocity[i] + dt * fluidAccel[i];
+        fluidActualArea[i] = fluidArea[i] / fluidDensity[i];
     }
 }
-void updateVelocity(bool density) {
+void SPHSimulation::updateVelocity(bool density ){
+    auto& dt = pm.get<scalar>("sim.dt");
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
 #pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        auto& di = particlesDFSPH[i];
-        pi.accel += di.accel;
-        di.vel += dt * di.accel;
+    for (int32_t i = 0; i < numPtcls; ++i) {
+       fluidAccel[i] += fluidPredAccel[i];
+        fluidPredVelocity[i] += dt * fluidPredAccel[i];
     }
 }
-void predictVelocityPCI(bool density) {
-#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        auto& di = particlesDFSPH[i];
-        di.vel = pi.vel + dt * pi.accel + dt * di.accel;
-        di.pos = pi.pos + dt * di.vel;
-        di.area = area / pi.rho;
-    }
-}
-int32_t divergenceSolve() {
-    static auto& active = ParameterManager::instance().get<bool>("dfsph.divergenceSolve");
+int32_t SPHSimulation::divergenceSolve() {
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+    auto& active = pm.get<bool>("dfsph.divergenceSolve");
     if (!active) return 0;
     //return 0;
     predictVelocity();
@@ -839,10 +371,9 @@ int32_t divergenceSolve() {
     computeSourceTerm(false);
     //scalar error = (scalar)0.0;
     //int32_t counter = 0;
-    scalar totalArea = area * (scalar)particles.size();
-    static auto& limit = ParameterManager::instance().get<scalar>("dfsph.divergenceEta");
-    static auto& error = ParameterManager::instance().get<scalar>("dfsph.divergenceError");
-    static auto& counter = ParameterManager::instance().get<int32_t>("dfsph.divergenceIterations");
+    auto& limit = pm.get<scalar>("dfsph.divergenceEta");
+    auto& error = pm.get<scalar>("dfsph.divergenceError");
+    auto& counter = pm.get<int32_t>("dfsph.divergenceIterations");
     counter = 0;
     do {
         //computeBoundaryTrianglePressure(false);
@@ -850,9 +381,9 @@ int32_t divergenceSolve() {
         computeAcceleration(false);
         updatePressure(false);
         error = (scalar)0.0;
-        for (auto di : particlesDFSPH)
-            error += di.dpdt;
-        error /= totalArea;
+        for (int32_t i = 0; i < numPtcls; ++i)
+            error += fluidDpDt[i] / fluidArea[i];
+        error /= numPtcls;
         //std::cout << "Divergence: " << counter << " -> " << error << std::endl;
     } while (counter++ < 3 || (error > (scalar)limit && counter < 3));
     computeBoundaryPressure(false);
@@ -860,95 +391,20 @@ int32_t divergenceSolve() {
     updateVelocity(false);
     return counter;
 }
-void predictDensity() {
-#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        auto& di = particlesDFSPH[i];
-        auto [ix, iy] = getCellIdx(di.pos.x(), di.pos.y());
-        di.rhoStar = 0.;
-        for (int32_t xi = -2; xi <= 2; ++xi) {
-            for (int32_t yi = -2; yi <= 2; ++yi) {
-                const auto& cell = getCell(ix + xi, iy + yi);
-                for (auto j : cell) {
-                    auto& pj = particlesDFSPH[j];
-                    vec r = pj.pos - di.pos;
-                    if (r.squaredNorm() <= support * support)
-                        di.rhoStar += area * W(pi.pos, pj.pos);
-                }
-            }
-        }
-        //pi.rho = std::max(pi.rho, 0.5);
-        boundaryFunc(di.pos, [&di, i](auto bpos, auto d, auto k, auto gk, auto triangle) {
-            //std::cout << i << " - " << pi.pos.x() << " : " << pi.pos.y() << " -> " << bpos.x() << " : " << bpos.y() << ", " << d << ", " << k << ", " << gk.x() << " : " << gk.y() << std::endl;
-            di.rhoStar += k; });
-        di.dpdt = di.rhoStar - 1.;
-    }
-}
-void updatePressurePCI() {
-    auto speed = ParameterManager::instance().get<scalar>("sim.inletSpeed");
-#pragma omp parallel for
-    for (int32_t i = 0; i < particles.size(); ++i) {
-        auto& pi = particles[i];
-        auto& di = particlesDFSPH[i];
-
-        auto delta = 0x1.41719825bf00dp-32;
-        auto beta = dt * dt * area * area * 2.;
-        auto pressure = rho0 * (di.rhoStar - 1.0) * delta / beta;
-        pressure = std::max(0., pressure);
-        di.pressure1 += pressure;
-        di.pressure2 = di.pressure1;
-    }
-
-}
-int32_t PCISPH() {
-    static auto& limit = ParameterManager::instance().get<scalar>("dfsph.densityEta");
-    static auto& error = ParameterManager::instance().get<scalar>("dfsph.densityError");
-    static auto& counter = ParameterManager::instance().get<int32_t>("dfsph.densityIterations");
-    scalar totalArea = (scalar)particles.size();
-    counter = 0;
-    for (auto& dp : particlesDFSPH) {
-        dp.pressure1 = dp.pressure2 = 0.;
-    }
-
-    do {
-        computeBoundaryPressure(true);
-        computeAcceleration(true);
-        predictVelocityPCI(true);
-        predictDensity();
-
-        updatePressurePCI();
-
-
-
-
-        error = (scalar)0.0;
-        for (auto di : particlesDFSPH)
-            error += std::max(-0.005, di.dpdt);
-        error /= totalArea;
-        //std::cout << "Density: " << counter << " -> " << std::defaultfloat << error << std::endl;
-    } while (counter++ < 3 || (error > (scalar)limit * 10. && counter < 32));
-    computeBoundaryPressure(true);
-    computeAcceleration(true);
-    updateVelocity();
-
-    return counter;
-}
-
-int32_t densitySolve() {
+int32_t SPHSimulation::densitySolve(){
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
     // return PCISPH();
     predictVelocity();
     computeAlpha(true);
     computeSourceTerm(true);
     //scalar error = (scalar)0.0;
     //int32_t counter = 0;
-    for (auto& dp : particlesDFSPH) {
-        dp.pressure1 = dp.pressure2 = 0.5 * dp.pressure1;
+    for (int32_t i = 0; i < numPtcls; ++i){
+       fluidPressure1[i] = fluidPressure2[i] = 0.5 * fluidPressure1[i];
     }
-    scalar totalArea = area * (scalar)particles.size();
-    static auto& limit = ParameterManager::instance().get<scalar>("dfsph.densityEta");
-    static auto& error = ParameterManager::instance().get<scalar>("dfsph.densityError");
-    static auto& counter = ParameterManager::instance().get<int32_t>("dfsph.densityIterations");
+    auto& limit = pm.get<scalar>("dfsph.densityEta");
+    auto& error = pm.get<scalar>("dfsph.densityError");
+    auto& counter = pm.get<int32_t>("dfsph.densityIterations");
     counter = 0;
     do {
         computeBoundaryTrianglePressure(true);
@@ -956,9 +412,9 @@ int32_t densitySolve() {
         computeAcceleration(true);
         updatePressure(true);
         error = (scalar)0.0;
-        for (auto di : particlesDFSPH)
-            error += std::max(-0.001 * area, di.rhoStar);
-        error /= totalArea;
+        for (int32_t i = 0; i < numPtcls; ++i)
+            error += std::max(-0.001 * fluidArea[i], fluidDensityStar[i]) / fluidArea[i];
+        error /= numPtcls;
         // std::cout << "Density: " << counter << " -> " << error << std::endl;
     } while (counter++ < 3 || (error > (scalar)limit && counter < 256));
     computeBoundaryPressure(true);
@@ -966,9 +422,166 @@ int32_t densitySolve() {
     updateVelocity();
 
 
-    for (auto& dp : particlesDFSPH) {
-        dp.pressurePrevious = dp.pressure1;
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        fluidPriorPressure[i] = fluidPressure1[i];
     }
 
-    return counter;
+    return counter;; }
+
+
+void SPHSimulation::computeVorticity() {
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+#pragma omp parallel for
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        scalar voriticity = 0.0;
+
+        for (int32_t j : fluidNeighborList[i]) {
+            auto grad = gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]);
+            auto vel = fluidVelocity[i] - fluidVelocity[j];
+            auto term = fluidArea[j] / fluidDensity[j] * (vel.x() * grad.y() - vel.y() * grad.x());
+
+            voriticity += term;
+        }
+        fluidVorticity[i] = voriticity;
+    }
+}
+void SPHSimulation::refineVorticity() {
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+    auto& nu_t = pm.get<scalar>("vorticity.nu_t");
+    auto& intertiaInverse = pm.get<scalar>("vorticity.inverseInertia");
+    auto& angularViscosity = pm.get<scalar>("vorticity.angularViscosity");
+
+    std::vector<scalar> dwdt(numPtcls, 0.0);
+    std::vector<vec> dvdt(numPtcls, vec(0.0, 0.0));
+#pragma omp parallel for
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        scalar voriticity = 0.0;
+        vec vterm(0.0, 0.0);
+
+        for (int32_t j :fluidNeighborList[i]) {
+            auto grad = gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]);
+            auto vel = fluidVelocity[i] - fluidVelocity[j];
+            auto vor = fluidAngularVelocity[i] - fluidAngularVelocity[j];
+            auto term = fluidArea[j] / fluidDensity[j] * (vel.x() * grad.y() - vel.y() * grad.x());
+
+            voriticity += term;
+            vterm.x() += fluidArea[j] / fluidDensity[j] * (-vor * grad.y());
+            vterm.y() += fluidArea[j] / fluidDensity[j] * (vor * grad.x());
+
+
+        }
+        dwdt[i] = nu_t * (voriticity - 2.0 * fluidAngularVelocity[i]) * intertiaInverse;
+        dvdt[i] = nu_t * vterm;
+    }
+
+    auto& dt = pm.get<scalar>("sim.dt");
+#pragma omp parallel for
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        fluidAngularVelocity[i] += dwdt[i] * dt;
+        fluidVelocity[i] += dvdt[i] * dt;
+    }
+
+#pragma omp parallel for
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        scalar angularTerm = 0.0;
+        for (int32_t j :fluidNeighborList[i]) {
+            auto kernel = W(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]);
+            auto vor = fluidAngularVelocity[j] - fluidAngularVelocity[i];
+            auto term = fluidArea[j] / fluidDensity[j] * vor * kernel;
+            angularTerm += term;
+        }
+        dwdt[i] = angularViscosity * angularTerm;
+    }
+#pragma omp parallel for
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        fluidAngularVelocity[i] += dwdt[i];
+    }
+}
+void SPHSimulation::externalForces() {
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+
+    for(auto& gravity: gravitySources){
+        if(gravity.pointSource){
+            auto location = gravity.location;
+            for (int32_t i = 0; i < numPtcls; ++i){
+                auto dir = fluidPosition[i] - location;
+                vec n = dir.normalized();
+                fluidAccel[i] += -gravity.magnitude * n;
+            }
+        }
+        else{
+            for (int32_t i = 0; i < numPtcls; ++i)
+                fluidAccel[i] += gravity.direction * gravity.magnitude;
+        }
+    }
+
+}
+void SPHSimulation::BXSPH() {
+    auto& numPtcls = pm.get<int32_t>("props.numPtcls");
+
+    auto& viscosityConstant = pm.get<scalar>("ptcl.viscosityConstant");
+    auto& boundaryViscosity = pm.get<scalar>("ptcl.boundaryViscosity");
+    std::vector<vec> tempV;
+
+    auto mu = boundaryViscosity;
+#pragma omp parallel for
+    for (int32_t i = 0; i < numPtcls; ++i) {
+        if (fluidTriangleNeighborList[i].size() == 0) continue;
+        auto f_visco = vec(0, 0);
+        auto grad = vec(0, 0);
+        auto ksum = 0.;
+        auto vsum = vec(0, 0);
+        for (auto ti : fluidTriangleNeighborList[i]) {
+            const auto& t = boundaryTriangles[ti];
+            auto [hit, pb2, d2, k, gk] = interactTriangle(fluidPosition[i], fluidSupport[i], t);
+            if (hit) {
+                grad += gk;
+                ksum += k;
+                vsum += gk;
+            }
+        }
+        grad = -grad.normalized();
+
+        auto v = fluidVelocity[i];
+        auto proj = v.dot(grad) * grad;
+        auto orth = v - proj;
+        f_visco -= std::min(mu * ksum, 1.0) * orth;
+
+        //f_visco += mu * orth;
+
+
+        //for (auto ti : pi.neighborTriangles) {
+        //    const auto& t = triangles[ti];
+
+        //    const auto f0 = (pi.vel - vec(0, 0)).dot(pi.pos - t.v0) / ((pi.pos - t.v0).dot(pi.pos - t.v0) + 0.01 * support * support);
+        //    const auto f1 = (pi.vel - vec(0, 0)).dot(pi.pos - t.v1) / ((pi.pos - t.v1).dot(pi.pos - t.v1) + 0.01 * support * support);
+        //    const auto f2 = (pi.vel - vec(0, 0)).dot(pi.pos - t.v2) / ((pi.pos - t.v2).dot(pi.pos - t.v2) + 0.01 * support * support);
+
+        //    auto [hit, pb2, d2, k, gk] = interactTriangle(pi.pos, t);
+
+        //   // auto [hit3, pb32, d32, k2, gk2] = interactTriangle(pi.pos, t);
+        //    if (hit) {
+        //        //printf("%d: [%g %g] @ [%g %g] -> %g %g %g => [%g %g]\n", i, pi.pos.x(), pi.pos.y(), pi.vel.x(), pi.vel.y(), f0, f1, f2, gk.x(), gk.y());
+        //        auto vc = (t.v0 + t.v1 + t.v2) / 3.;
+        //        auto diff = pi.pos - vc;
+        //        //auto grad = gk2.normalized();
+        //        auto proj = gk.dot(grad) * grad;
+        //        auto orth = gk - proj;
+        //        f_visco += mu * orth;
+
+
+        //        //if(std::abs(diff.x()) < std::abs(diff.y()))
+        //        //    f_visco.x() = f_visco.x() + mu * gk.x();
+        //        //else
+        //        //    f_visco.y() = f_visco.y() + mu * gk.y();
+
+
+
+        //        //f_visco.x() = 0.0;
+        //    }
+        //}
+
+        fluidVelocity[i] += f_visco;
+        //particles[i].vel += 8. * f_visco * (area) / particles[i].rho * dt;
+    }
 }

@@ -1,6 +1,6 @@
 #include <glad/glad.h> 
 #include "glui.h"
-#include <tools/Timer.h>
+#include <tools/timer.h>
 
 ImVec4 hexToCol(Color hexc) {
     int64_t hex = (int64_t)hexc;
@@ -28,35 +28,35 @@ void GUI::TimerWindow(bool* p_open) {
         auto& t = *tptr;
         ImGui::PushStyleColor(ImGuiCol_Header, hexToCol(t.getColor()));
         auto id = t.getDecriptor() + (t.getSamples().size() > 0 ? 
-            ("\t" + std::to_string(std::floorf(*t.getSamples().rbegin() * 100.f) * 0.01f) + "ms") : std::string(""));
+            ("\t" + std::to_string(std::floor(*t.getSamples().rbegin() * 100.f) * 0.01f) + "ms") : std::string(""));
         if (ImGui::CollapsingHeader((id + "###" + (t.getDecriptor() + std::to_string(i++))).c_str())) {
             ImGui::PushID(i);
             static char buf1[512] = "";
-            strcpy_s(buf1, 512, t.getDecriptor().c_str());
+            strcpy(buf1, t.getDecriptor().c_str());
             ImGui::PushItemWidth(-100);
             ImGui::InputText("Identifier", buf1, 64);
             if (t.getSourceLocation() != "") {
-                strcpy_s(buf1, 512, (t.getSourceLocation() + ":" + std::to_string(t.getLine())).c_str());
+                strcpy(buf1, (t.getSourceLocation() + ":" + std::to_string(t.getLine())).c_str());
                 ImGui::InputText("Location", buf1, 64);
             }
             ImGui::PopItemWidth();
             if (auto statsopt = t.getStats()) {
                 auto stats = statsopt.value();
                 static char buf[512] = "";
-                sprintf_s(buf, 512, "%.7g", std::floorf(stats.min * 100.f) * 0.01f);
+                sprintf(buf, "%.7g", std::floor(stats.min * 100.f) * 0.01f);
                 ImGui::Text("min"); ImGui::SameLine();
                 ImGui::Button(buf, ImVec2(66, 0)); ImGui::SameLine();
                 ImGui::Text("max"); ImGui::SameLine();
-                sprintf_s(buf, 512, "%.7g", std::floorf(stats.max * 100.f) * 0.01f);
+                sprintf(buf, "%.7g", std::floor(stats.max * 100.f) * 0.01f);
                 ImGui::Button(buf, ImVec2(66, 0)); ImGui::SameLine();
                 ImGui::Text("avg"); ImGui::SameLine();
-                sprintf_s(buf, 512, "%.7g", std::floorf(stats.avg * 100.f) * 0.01f);
+                sprintf(buf, "%.7g", std::floor(stats.avg * 100.f) * 0.01f);
                 ImGui::Button(buf, ImVec2(66, 0)); ImGui::SameLine();
                 ImGui::Text("med"); ImGui::SameLine();
-                sprintf_s(buf, 512, "%.7g", std::floorf(stats.median * 100.f) * 0.01f);
+                sprintf(buf, "%.7g", std::floor(stats.median * 100.f) * 0.01f);
                 ImGui::Button(buf, ImVec2(66, 0)); ImGui::SameLine();
                 ImGui::Text("dev"); ImGui::SameLine();
-                sprintf_s(buf, 512, "%.7g", std::floorf(stats.stddev * 100.f) * 0.01f);
+                sprintf(buf, "%.7g", std::floor(stats.stddev * 100.f) * 0.01f);
                 ImGui::Button(buf, ImVec2(66, 0));
 
                 ImGui::PushItemWidth(-100);
