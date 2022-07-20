@@ -23,8 +23,6 @@ SET(NAME omniSPH)
 project(${NAME} LANGUAGES CXX) 
 
 FIND_PACKAGE( yaml-cpp		REQUIRED )
-FIND_PACKAGE( glfw3			REQUIRED )
-FIND_PACKAGE( glad			REQUIRED ) 
 FIND_PACKAGE( Eigen3			REQUIRED ) 
 
 configure_file(config.h.in config/config.h) 
@@ -43,6 +41,9 @@ INCLUDE_DIRECTORIES(${INCLUDE_DIRS})
 SET(GUI TRUE CACHE BOOL "User defined")
 IF(NOT(GUI))
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -fopenmp -DNO_GUI")
+ELSE()
+FIND_PACKAGE( glfw3			REQUIRED )
+FIND_PACKAGE( glad			REQUIRED ) 
 ENDIF()
 
 
