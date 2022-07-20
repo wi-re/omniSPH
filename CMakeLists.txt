@@ -106,14 +106,23 @@ add_library(imgui ${imguiSources})
 add_executable(gui Source.cpp ${guiSources})
 _SETUP_DEPENDENCIES(imgui glfw glad::glad)
 _SETUP_DEPENDENCIES(gui imgui glfw glad::glad simulation tools Eigen3::Eigen) 
-ENDIF()
-
 
 add_executable(console SourceTerminal.cpp)
 
 _SETUP_DEPENDENCIES(tools Eigen3::Eigen)
 _SETUP_DEPENDENCIES(simulation tools Eigen3::Eigen)
 
+_SETUP_DEPENDENCIES(console simulation tools Eigen3::Eigen imgui glfw glad::glad)
+ELSE()
+add_executable(console SourceTerminal.cpp)
+
+_SETUP_DEPENDENCIES(tools Eigen3::Eigen)
+_SETUP_DEPENDENCIES(simulation tools Eigen3::Eigen)
+
 _SETUP_DEPENDENCIES(console simulation tools Eigen3::Eigen)
+
+ENDIF()
+
+
 
 # target_compile_options(rayTracingCore PRIVATE /arch:AVX2) 
