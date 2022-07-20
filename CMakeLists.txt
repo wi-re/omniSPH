@@ -40,6 +40,12 @@ SET(INCLUDE_DIRS
 )
 INCLUDE_DIRECTORIES(${INCLUDE_DIRS})   
   
+SET(GUI TRUE CACHE BOOL "User defined")
+IF(NOT(GUI))
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20 -fopenmp -DNO_GUI")
+ENDIF()
+
+
 IF(WIN32)
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /openmp /fpermissive- /arch:AVX2")
 ELSE()
@@ -70,7 +76,7 @@ macro(_SETUP_DEPENDENCIES MODULE_NAME)
 	)  
 	IF(WIN32)
 	ELSE()	
-		target_link_libraries(${MODULE_NAME} stdc++)
+		target_link_libraries(${MODULE_NAME} stdc++ m)
 	ENDIF()
 	target_include_directories(${MODULE_NAME} PUBLIC ${INCLUDE_DIRECTORIES})
 endmacro(_SETUP_DEPENDENCIES)  
@@ -81,10 +87,12 @@ function(buildLibrary LIBRARY_NAME TARGETLIST PREFIX )
 	_SETUP_DEPENDENCIES(${LIBRARY_NAME} ${ARGN})
 endfunction(buildLibrary) 
 
+IF(GUI)
 _GLOB_SOURCES("gui")
 SET(guiSources "${source_list}")
 _GLOB_SOURCES("imgui")
 SET(imguiSources "${source_list}")
+ENDIF()
 _GLOB_SOURCES("simulation")
 SET(simSources "${source_list}")
 _GLOB_SOURCES("tools")
@@ -92,17 +100,20 @@ SET(toolSources "${source_list}")
 
 add_library(simulation ${simSources})
 add_library(tools ${toolSources})
+IF(GUI)
 add_library(imgui ${imguiSources})
 
 add_executable(gui Source.cpp ${guiSources})
+_SETUP_DEPENDENCIES(imgui glfw glad::glad)
+_SETUP_DEPENDENCIES(gui imgui glfw glad::glad simulation tools Eigen3::Eigen) 
+ENDIF()
+
+
 add_executable(console SourceTerminal.cpp)
 
-_SETUP_DEPENDENCIES(tools Eigen3::Eigen imgui)
+_SETUP_DEPENDENCIES(tools Eigen3::Eigen)
 _SETUP_DEPENDENCIES(simulation tools Eigen3::Eigen)
 
-_SETUP_DEPENDENCIES(imgui glfw glad::glad)
-
-_SETUP_DEPENDENCIES(console imgui glfw glad::glad simulation tools Eigen3::Eigen)
-_SETUP_DEPENDENCIES(gui imgui glfw glad::glad simulation tools Eigen3::Eigen) 
+_SETUP_DEPENDENCIES(console simulation tools Eigen3::Eigen)
 
 # target_compile_options(rayTracingCore PRIVATE /arch:AVX2) 

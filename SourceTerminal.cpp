@@ -1,5 +1,4 @@
 #include <tools/exceptionHandling.h>
-#include "gui/glui.h"
 #include <sstream>
 #include <thread>
 //#include <windows.h>

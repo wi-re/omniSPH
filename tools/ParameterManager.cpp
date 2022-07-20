@@ -1,15 +1,17 @@
 // #define _CRT_SECURE_NO_WARNINGS
 #define _SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
 #include <tools/ParameterManager.h>
+#ifndef NO_GUI
 #include "../imgui/imgui.h"
 #include <glad/glad.h> 
 #include <GLFW/glfw3.h>
+#endif
 #pragma warning(push)
 #pragma warning(disable:4251; disable:4275)
 #include <yaml-cpp/yaml.h>
 #pragma warning(pop)
-//#include <utility/identifier/resource_helper.h>
 #include <glm/glm.hpp>
+//#include <utility/identifier/resource_helper.h>
 
 // struct float2{float x,y;};
 // struct float3{float x,y,z;};
@@ -352,6 +354,7 @@ std::pair<std::string, std::string> split(std::string s) {
 			char const* cpt = boost::any_cast<char const*>(node);
 			return YAML::convert < std::string>::encode(std::string(cpt));
 		};
+		#ifndef NO_GUI
 		addUifunction(typeid(bool), [](Parameter& param) {
 			bool& var = boost::any_cast<bool&>(param.param.val.value());
 			//std::cout << param.identifier << std::endl;
@@ -945,6 +948,7 @@ std::pair<std::string, std::string> split(std::string s) {
 			});
 		customVectorInternal(int32_t);
 		customVectorInternal(float);
+			#endif
 	/*	addUifunction(typeid(std::vector<int32_t>), [](Parameter& param) {
 			std::vector<int32_t>& var = boost::any_cast<std::vector<int32_t>&>(param.param.valVec.value());
 			if (param.properties.hidden)return;
@@ -1050,6 +1054,7 @@ std::pair<std::string, std::string> split(std::string s) {
 		// std::cout << sstream.str() << std::endl;
 		return sstream.str();
 	}
+	#ifndef NO_GUI
 	void ParameterManager::buildImguiWindow(bool* p_open) {
 		{
 			if (!ImGui::Begin("Parameter Manager", p_open))
@@ -1082,3 +1087,4 @@ std::pair<std::string, std::string> split(std::string s) {
 		}
 	}
 
+#endif

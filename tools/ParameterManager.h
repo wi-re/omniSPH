@@ -139,8 +139,9 @@ public:
 	void loadDirect(std::string yaml);
 	std::string buildTree();
 	void loadTree(YAML::Node);
+#ifndef NO_GUI
 	void buildImguiWindow(bool* p_open);
-
+#endif
 	void init();
 };
 
