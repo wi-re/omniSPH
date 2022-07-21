@@ -37,3 +37,6 @@ x64/
 .vscode/
 build
 /data
+
+omnySPH/_skbuild
+omnySPH/src/omnySPH.egg-info
