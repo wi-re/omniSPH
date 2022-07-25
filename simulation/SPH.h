@@ -118,6 +118,57 @@ public:
             config = YAML::Load(_config);
             initializeParameters();
             initializeSPH();
+        }else{
+            config = YAML::Load(R"(
+fluids:
+    - min: [0.2, 0.4]
+      max: [0.4, 0.6]
+      velocity: [1,0]
+      radius: 0.00279783
+      type: once
+      shape: spherical
+    - min: [0.6, 0.4]
+      max: [0.8, 0.6]
+      velocity: [-1,0]
+      radius: 0.00279783
+      type: once
+      shape: spherical
+
+gravity:
+    - pointSource: false
+      direction: [0., -1.]
+      magnitude: 9.81
+
+triangles:
+    - v0: [0.375, 0.02]
+      v1: [0.40625, 0.02]
+      v2: [0.40625, 0.06]
+    - v0: [0.40625, 0.02]
+      v1: [0.59375, 0.02]
+      v2: [0.59375, 0.06]
+    - v0: [0.40625, 0.02]
+      v1: [0.40625, 0.06]
+      v2: [0.59375, 0.06]
+    - v0: [0.59375, 0.02]
+      v1: [0.625, 0.02]
+      v2: [0.59375, 0.06]
+
+domain:
+    min: [0,0]
+    max: [1, 1]
+    epsilon: 0.02
+
+sim:
+    maxDt: 0.0005
+    minDt: 0.0005
+
+export:
+    active: true
+    limit: 2.0
+    interval: 5
+)");
+            initializeParameters();
+            initializeSPH();
         }
     }
 
@@ -187,5 +238,17 @@ public:
     ParameterManager pm;
 
     fs::path resolveFile(std::string fileName, std::vector<std::string> search_paths = {});
+
+    scalar getScalar(std::string property){return pm.get<scalar>(property);}
+    vec getVec(std::string property){return pm.get<vec>(property);}
+    int32_t getInteger(std::string property){return pm.get<int32_t>(property);}
+    bool getBoolean(std::string property){return pm.get<bool>(property);}
+
+    void setScalar(std::string property, scalar value){pm.get<scalar>(property) = value;}
+    void setVec(std::string property, vec value){pm.get<vec>(property) = value;}
+    void setInteger(std::string property, int32_t value){pm.get<int32_t>(property) = value;}
+    void setBoolean(std::string property, bool value){pm.get<bool>(property) = value;}
+
+
 };
 inline SPHSimulation simulationState;

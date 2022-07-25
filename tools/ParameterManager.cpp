@@ -1036,7 +1036,7 @@ std::pair<std::string, std::string> split(std::string s) {
 			try{
 			auto id = p.second->identifier;
 			auto ns = p.second->identifierNamespace;
-			std::cout << "building for " << ns << "." << id << std::endl;
+			// std::cout << "building for " << ns << "." << id << std::endl;
 			if (ns != "")
 				root[ns][id] = encoders[p.second->type](p.second->param.isVec ? p.second->param.valVec.value() : p.second->param.val.value());
 			else{

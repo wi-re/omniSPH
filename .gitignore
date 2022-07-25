@@ -40,3 +40,4 @@ build
 
 omnySPH/_skbuild
 omnySPH/src/omnySPH.egg-info
+omnySPH/data
