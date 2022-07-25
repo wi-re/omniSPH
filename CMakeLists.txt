@@ -66,6 +66,7 @@ FIND_PACKAGE( glfw3			REQUIRED )
 FIND_PACKAGE( glad			REQUIRED ) 
 ENDIF()
 
+set (CMAKE_CXX_STANDARD 17)
 
 IF(WIN32)
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /openmp /fpermissive- /arch:AVX2")
