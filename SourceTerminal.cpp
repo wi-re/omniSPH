@@ -116,7 +116,7 @@ int main(int argc, char* argv[])
 
 
 
-    simulationState = SPHSimulation(buffer.str());
+   auto simulationState = SPHSimulation(buffer.str());
     simulationState.pm.get<bool>("export.active") = true;
     auto limit = simulationState.pm.get<scalar>("export.limit");
     if(limit < 0.)

@@ -251,4 +251,3 @@ export:
 
 
 };
-inline SPHSimulation simulationState;

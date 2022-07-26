@@ -11,6 +11,8 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/classification.hpp>
 
+inline SPHSimulation simulationState;
+
 template<typename T = float>
 auto bind(GLuint program, GLuint location, T value) {
     using Ty = std::decay_t<T>;
