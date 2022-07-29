@@ -123,6 +123,55 @@ int main(int argc, char* argv[])
 //     interval: 10
 // )");
 
+// auto n = 5;
+// std::vector<vec> positions;
+// auto area = 1.;
+// auto radius = sqrt(area / double_pi);
+// auto support = sqrt(area * targetNeighbors / double_pi);
+// auto packing = 0.39900743165053487;
+
+// for(int32_t x = -n; x <= n; ++x){
+// for(int32_t y = -n; y <= n; ++y){
+//   positions.push_back(vec{
+//     packing * support * (double) x,
+//     packing * support * (double) y
+//   });
+// }}
+
+// vec center{0.,0.};
+// auto rho = 0.;
+// for(auto p : positions)
+//   rho += area * W(center, p, support, support);
+// printf("Source.cpp: radius: %g, area: %g, support: %g, packing: %g\n", radius, area, support, packing * support);
+// std::cout << "Actual density: " << rho << std::endl;
+// fluidSource source{
+//   .emitterMin = vec(-packing * support * 5.,-packing * support * 5.),
+//   .emitterMax = vec(packing * support * 5.,packing* support  * 5.),
+//   .emitterRadius = radius
+// };
+// auto ptcls = source.genParticles();
+// rho = 0.;
+// for(auto p : ptcls)
+//   rho += area * W(center, p, support, support);
+// std::cout << "Gen density: " << rho << std::endl;
+// auto rSum = 0.;
+// auto lSum = 0.;
+// auto dSum = 0.;
+// for(int32_t i = 0; i < positions.size(); ++i){
+//   auto p = positions[i];
+//   auto b = ptcls[i];
+//   auto d = b - center;
+//   printf("[%d]: [%g, %g] - [%g, %g]\n", i, p.x(), p.y(), b.x(), b.y());
+//   printf("\t[%g, %g] -> %g -> Kernel (m): %g\n", (p-center).x(), (p-center).y(), (p-center).norm(), W(p, center, support, support));
+//   printf("\t[%g, %g] -> %g -> Kernel (a): %g\n", (b-center).x(), (b-center).y(), (b-center).norm(), W(b, center, support, support));
+//   printf("\tDiff: %g\n", W(p, center, support, support) - W(b, center, support, support));
+//   rSum += W(p, center, support, support);
+//   lSum += W(b, center, support, support);
+//   dSum += abs(W(p, center, support, support) - W(b, center, support, support));
+// }
+// printf("%g : %g -> %g || %g\n", rSum, lSum, rSum - lSum, dSum);
+
+
 if(argc > 1){
   std::string fileName = argv[1];
   std::ifstream t(fileName);

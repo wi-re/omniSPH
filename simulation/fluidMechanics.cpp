@@ -37,7 +37,7 @@ void SPHSimulation::Integrate(){
         auto spacing_2D = 0.23999418487168855;
 
         for(auto& source : fluidSources){
-            if(source.emitter != emitter_t::inlet && source.emitter != emitter_t::velocitySource) continue;
+            if(source.emitter != emitter_t::velocitySource) continue;
             
         if(source.timeLimit > 0. && time > source.timeLimit) continue;
     vec center = (source.emitterMin + source.emitterMax) / 2.;
@@ -49,8 +49,17 @@ void SPHSimulation::Integrate(){
                 auto speed = source.emitterRampTime > 0. ? std::clamp(time / source.emitterRampTime, 0., 1.) * source.emitterVelocity.norm() : source.emitterVelocity.norm();
 
                 if(source.shape == shape_t::rectangular)
-                if(pos.x() < source.emitterMax.x() && pos.x() > source.emitterMin.x() && pos.y() < source.emitterMax.y() && pos.y() > source.emitterMin.y()){
-                    fluidVelocity[i] = source.emitterVelocity.normalized() * speed;
+                if(pos.x() <= source.emitterMax.x() && pos.x() >= source.emitterMin.x() && pos.y() <= source.emitterMax.y() && pos.y() >= source.emitterMin.y()){
+                    auto mu = 3.5;
+                    auto xr = (pos.x() - source.emitterMin.x()) / (source.emitterMax.x() - source.emitterMin.x());
+                    if(source.emitterMin.x() > .5)
+                    xr = 1. - xr;
+                    auto gamma = 1. - (std::exp(std::pow(xr,mu))-1.) / (std::exp(1) - 1.);
+
+                    auto emitterVel = source.emitterVelocity;
+                    fluidVelocity[i] += dt * fluidAccel[i];
+                    fluidVelocity[i] = fluidVelocity[i] * ( 1. - gamma) + gamma * emitterVel;
+                    // printf("%g -> %g : %g -> %g\n", pos.x(), xr, std::exp(std::pow(xr,mu)), gamma );
                     fluidAngularVelocity[i] = 0.;
                     fluidAccel[i] = vec(0.,0.);
                 }
@@ -66,6 +75,40 @@ void SPHSimulation::Integrate(){
             }
 
         }
+
+        for(auto& source : fluidSources){
+            if(source.emitter != emitter_t::inlet) continue;
+            
+        if(source.timeLimit > 0. && time > source.timeLimit) continue;
+    vec center = (source.emitterMin + source.emitterMax) / 2.;
+    vec pdiff = (source.emitterMax - source.emitterMin) / 2.;
+    scalar radius = std::min(pdiff.x(), pdiff.y());
+
+            for (int32_t i = 0; i < numPtcls; ++i) {
+                auto pos = fluidPosition[i];
+                auto speed = source.emitterRampTime > 0. ? std::clamp(time / source.emitterRampTime, 0., 1.) * source.emitterVelocity.norm() : source.emitterVelocity.norm();
+
+                if(source.shape == shape_t::rectangular)
+                if(pos.x() <= source.emitterMax.x() && pos.x() >= source.emitterMin.x() && pos.y() <= source.emitterMax.y() && pos.y() >= source.emitterMin.y()){
+                    auto emitterVel = source.emitterVelocity;
+                    fluidVelocity[i] = emitterVel;
+                    // printf("%g -> %g : %g -> %g\n", pos.x(), xr, std::exp(std::pow(xr,mu)), gamma );
+                    fluidAngularVelocity[i] = 0.;
+                    fluidAccel[i] = vec(0.,0.);
+                }
+                if(source.shape == shape_t::spherical){
+                auto d = pos - center;
+                auto l = d.norm();
+                //std::cout << pos.x() << " " << pos.y() << " -> " << d.x() << " " << d.y() << " -> " << l << " / " << radius << " -> " <<(l>= radius) << std::endl;
+                if (l >= radius) continue;
+                    fluidVelocity[i] = source.emitterVelocity.normalized() * speed;
+                    fluidAngularVelocity[i] = 0.;
+                    fluidAccel[i] = vec(0.,0.);
+                }
+            }
+
+        }
+
 
 
         auto& damping = pm.get<scalar>("props.damping");

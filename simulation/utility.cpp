@@ -5,7 +5,22 @@ void SPHSimulation::emitParticles(){
     auto currTime = pm.get<double>("sim.time");
     auto& numPtcls = pm.get<int32_t>("props.numPtcls");
     auto& dt = pm.get<scalar>("sim.dt");
-    bool once = true;
+    currTime = currTime - dt;
+
+        auto triangleSign = [](vec v1, vec v2, vec v3){
+            return (v1.x() - v3.x()) * (v2.y() - v3.y()) - (v2.x() - v3.x()) * (v1.y() - v3.y());
+        };
+        auto pointInTriangle = [triangleSign](vec pt, vec v1, vec v2, vec v3){
+            auto d1 = triangleSign(pt, v1, v2);
+            auto d2 = triangleSign(pt, v2, v3);
+            auto d3 = triangleSign(pt, v3, v1);
+
+            bool has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+            bool has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+
+            return !(has_neg && has_pos);
+        };
+
     for(auto& source: fluidSources){
 
         if(source.emitter != emitter_t::inlet) continue;
@@ -16,11 +31,12 @@ void SPHSimulation::emitParticles(){
         auto velDir = source.emitterVelocity.normalized();
         auto speed = source.emitterRampTime > 0. ? std::clamp(currTime / source.emitterRampTime, 0., 1.) * source.emitterVelocity.norm() : source.emitterVelocity.norm();
 
-        if(once)
+        if(inletOnce)
             source.emitterOffset = -dt * speed;
         auto support = std::sqrt(source.emitterRadius * source.emitterRadius  * targetNeighbors);
-        source.emitterOffset = std::fmod(source.emitterOffset + dt * speed, 2.0 * 0.39960767069134208 * support);
-
+        source.emitterOffset = std::fmod(source.emitterOffset + dt * speed, 1.0 * packing_2D * support);
+        // source.emitterOffset = source.emitterOffset + dt * speed;
+        // printf("Offset: %g, Period: %g, Increment: %g\n", source.emitterOffset, 4. * packing_2D * support, dt *speed);
 
         auto ptcls = source.genParticles();
         for(int32_t i = 0; i < ptcls.size(); ++ i){
@@ -28,18 +44,27 @@ void SPHSimulation::emitParticles(){
             pos += velDir * source.emitterOffset;
         auto [ix, iy] = getCellIdx(ptcls[i].x(), ptcls[i].y());
         bool emit = true;
-        for (int32_t xi = -1; xi <= 1; ++xi) {
-            for (int32_t yi = -1; yi <= 1; ++yi) {
+        for (int32_t xi = -2; xi <= 2; ++xi) {
+            for (int32_t yi = -2; yi <= 2; ++yi) {
+                if(ix +xi < 0 || ix +xi >= cellsX || iy+yi <0 || iy + yi >= cellsY) continue;
                 const auto& cell = getCell(ix + xi, iy + yi);
                 for (auto j : cell) {
                     auto& pj = fluidPosition[j];
                     vec r = pj - pos;
-                    if (r.squaredNorm() <= /*1.5 * 2.0 * 2.0 **/ 0.9 * 0.39960767069134208 * 0.39960767069134208 * support * support) {
+                    if (r.squaredNorm() <= /*1.5 * 2.0 * 2.0 **/ 0.5* packing_2D * packing_2D * support * support) {
                         emit = false; 
                     }
                 }
             }
         }
+        if(pos.x() <= source.emitterMin.x() || pos.x() >= source.emitterMax.x() || pos.y() <= source.emitterMin.y() || pos.y() >= source.emitterMax.y())
+        emit = false;
+
+        for(auto t: boundaryTriangles)
+            if(pointInTriangle(pos, t.v0, t.v1, t.v2))
+            emit = false;
+        
+
         if(!emit) continue;
             fluidPosition[numPtcls]         = pos;
             fluidVelocity[numPtcls]         = source.emitterVelocity;
@@ -51,19 +76,23 @@ void SPHSimulation::emitParticles(){
             fluidAngularVelocity[numPtcls] = 0.;
             fluidUID[numPtcls] = fluidCounter++;
 
-            getCell(pos.x(), pos.y()).push_back(numPtcls);
+            // getCell(pos.x(), pos.y()).push_back(numPtcls);
 
             numPtcls += 1;
         }
     }
-    once = false;
+
+
+
+    inletOnce = false;
 }
 
 
 std::vector<vec> fluidSource::genParticles() const{
     scalar area = double_pi * emitterRadius * emitterRadius;
     scalar support = std::sqrt(area * targetNeighbors / double_pi);
-    scalar packing = 0.39960767069134208 * support;
+    scalar packing = packing_2D * support;
+    // printf("radius: %g, area: %g, support: %g, packing: %g\n", emitterRadius, area, support, packing);
     vec center = (emitterMin + emitterMax) / 2.;
     vec pdiff = (emitterMax - emitterMin) / 2.;
     scalar radius = std::min(pdiff.x(), pdiff.y());
@@ -76,7 +105,7 @@ std::vector<vec> fluidSource::genParticles() const{
   auto requiredSlices_x = ::ceil(diff.x() / packing);
   //auto requiredSlices_y = ::ceil(diff.y() / (::sqrt(3.0) * packing));
   auto requiredSlices_y = ::ceil(diff.y() / packing);
- // std::cout << "Generating particles on a " << requiredSlices_x << " x " << requiredSlices_y << " hex grid " << std::endl;
+//  std::cout << "Generating particles on a " << requiredSlices_x << " x " << requiredSlices_y << " hex grid " << std::endl;
   std::vector<vec> points;
   for (int32_t x_it = 0; x_it < requiredSlices_x + 1; ++x_it)
     for (int32_t y_it = 0; y_it < requiredSlices_y + 1; ++y_it) {

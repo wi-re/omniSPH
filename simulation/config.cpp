@@ -450,27 +450,36 @@ void SPHSimulation::initializeSPH(){
     //     }
     // }
 
-        auto domainEpsilon = pm.get<scalar>("domain.epsilon");
+        auto& domainEpsilon = pm.get<scalar>("domain.epsilon");
+
+        auto spacing = 0.23999418487168855 * baseSupport;
+        auto packing = packing_2D * baseSupport;
+
+        auto bottomRows = ::ceil(domainEpsilon / packing);
+        auto adjustedEpsilon = bottomRows * packing - 0.99 * spacing;
+        domainEpsilon = adjustedEpsilon;
+
+
         addRect(domainMin.x() + 0, 
                 domainMin.y() + 0, 
-                domainMin.x() + domainEpsilon, 
+                domainMin.x() + adjustedEpsilon, 
                 domainMin.y() + domainHeight);
-        addRect(domainMin.x() + domainEpsilon, 
+        addRect(domainMin.x() + adjustedEpsilon, 
                 domainMin.y() + 0, 
-                domainMin.x() + domainWidth - domainEpsilon, 
-                domainMin.y() + domainEpsilon);
-        addRect(domainMin.x() + domainWidth - domainEpsilon, 
+                domainMin.x() + domainWidth - adjustedEpsilon, 
+                domainMin.y() + adjustedEpsilon);
+        addRect(domainMin.x() + domainWidth - adjustedEpsilon, 
                 domainMin.y() + 0, 
                 domainMin.x() + domainWidth, 
                 domainMin.y() + domainHeight);
-        addRect(domainMin.x() + domainEpsilon,
-                domainMin.y() + domainHeight - domainEpsilon, 
-                domainMin.x() + domainWidth - domainEpsilon, 
+        addRect(domainMin.x() + adjustedEpsilon,
+                domainMin.y() + domainHeight - adjustedEpsilon, 
+                domainMin.x() + domainWidth - adjustedEpsilon, 
                 domainMin.y() + domainHeight);
 
 
     
-        scalar threshold = 0.39960767069134208 * baseSupport * 0.5;
+        scalar threshold = packing_2D * baseSupport * 0.5;
         auto checkPosition = [&](vec pos){
             auto [ix, iy] = getCellIdx(pos.x(), pos.y());
             for (int32_t xi = -1; xi <= 1; ++xi) {
@@ -511,8 +520,8 @@ void SPHSimulation::initializeSPH(){
 
         std::mutex m;
 
-        int32_t xSlices = domainWidth / 0.39960767069134208 / baseSupport;
-        int32_t ySlices = domainHeight / 0.39960767069134208 / baseSupport;
+        int32_t xSlices = domainWidth / packing_2D / baseSupport;
+        int32_t ySlices = domainHeight / packing_2D / baseSupport;
 #pragma omp parallel for
         for(int32_t i = 0; i <= xSlices; ++i){
             for(int32_t j = 0; j <= ySlices; ++ j){
@@ -619,11 +628,15 @@ void SPHSimulation::initializeSPH(){
                     auto& pj = fluidPosition[j];
                     vec r = pj - ptcls[i];
                     if (r.squaredNorm() <= /*1.5 * 2.0 * 2.0 **/ 
-                    0.95 * 0.39960767069134208 * 0.39960767069134208 * support * support) {
+                    0.95 * packing_2D * packing_2D * support * support) {
                         emit=false;
                     }
                 }
             }
+        }
+        for(auto t: boundaryTriangles){
+            if(pointInTriangle(ptcls[i], t.v0, t.v1, t.v2))
+                emit = false;
         }
         if(!emit)continue;
             fluidPosition[numPtcls]         = ptcls[i];
@@ -642,4 +655,58 @@ void SPHSimulation::initializeSPH(){
         }
     }
     this->boundaryTriangles = boundaryTriangles;
+    neighborList();
+
+    
+        // auto domainEpsilon = pm.get<scalar>("domain.epsilon");
+        std::vector<int32_t> filteredParticles;
+        filteredParticles.reserve(numPtcls);
+        auto& t = pm.get<scalar>("sim.time");
+        int32_t filteredCount = 0;
+        for (int32_t i = 0; i < numPtcls; ++ i) {
+            bool filtered = false;
+                auto& pi = fluidPosition[i];
+                auto& hi = fluidSupport[i];
+                auto rho = 0.;
+                auto [ix, iy] = getCellIdx(pi.x(), pi.y());
+                bool emit = true;
+                for (int32_t xi = -1; xi <= 1; ++xi) {
+                    for (int32_t yi = -1; yi <= 1; ++yi) {
+                        const auto& cell = getCell(ix + xi, iy + yi);
+                        for (auto j : cell) {
+                            auto& pj = fluidPosition[j];
+                            rho += fluidArea[j] * W(pi, fluidPosition[j], hi, fluidSupport[j]);
+                        }
+                    }
+                }
+                //pi.rho = std::max(pi.rho, 0.5);
+                boundaryFunc(i, [&rho](auto bpos, auto d, auto k, auto gk, auto triangle) {
+                    rho += k; });
+                // if(rho > 1.0) {filtered = true; filteredCount++;};
+            if(filtered) continue;
+             {
+                //auto ec = --emitCounter;
+                //if (ec <= 0) {
+                 //   emitCounter++;
+                    filteredParticles.push_back(i);
+                //}
+            }
+        }
+        std::cout << filteredCount << std::endl;
+        if (filteredCount > 0) {
+            numPtcls = numPtcls - filteredCount;
+            for (int32_t i = 0; i < numPtcls; ++i) {
+                auto srcIdx = filteredParticles[i];
+                fluidPosition[i] = fluidPosition[srcIdx];
+                fluidVelocity[i] = fluidVelocity[srcIdx];
+                fluidAngularVelocity[i] = fluidAngularVelocity[srcIdx];
+                fluidVorticity[i] = fluidVorticity[srcIdx];
+                fluidPriorPressure[i] = fluidPriorPressure[srcIdx];
+                fluidArea[i] = fluidArea[srcIdx];
+                fluidRestDensity[i] = fluidRestDensity[srcIdx];
+                fluidUID[i]=fluidUID[srcIdx];
+                fluidSupport[i] = fluidSupport[srcIdx];
+            }
+
+ }
 }

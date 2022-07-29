@@ -25,14 +25,26 @@ void GUI::initGL(int argc, char* argv[]) {
     auto domainMax = simulationState.pm.get<vec>("domain.max");
     auto domainWidth = domainMax.x() - domainMin.x();
     auto domainHeight = domainMax.y() - domainMin.y();
-    if(domainWidth > domainHeight){
-        screenWidth = 2048;
+
+    auto maxWidth = 3800;
+    auto maxHeight = 2048;
+    auto xrel = ((double) maxWidth) / domainWidth;
+    auto yrel = ((double) maxHeight) / domainHeight;
+
+    std::cout << "Window extent limits: " << maxWidth << " x " << maxHeight << std::endl;
+    std::cout << "Domain extents: " << domainWidth << " x " << domainHeight << std::endl;
+    std::cout << "Ratios: " << xrel << " x " << yrel << std::endl;
+
+    if(xrel < yrel){
+        screenWidth = 3800;
         screenHeight =  2048. * domainHeight / domainWidth;
     }
     else{
-        screenWidth = 2048 * domainWidth / domainHeight;
+        screenWidth = 3800 * domainWidth / domainHeight;
         screenHeight =  2048.;
     }
+    std::cout << "Window Resolution: " << screenWidth << " x " << screenHeight << std::endl;
+
     window = glfwCreateWindow(screenWidth, screenHeight, "OmniFlow", NULL, NULL);
     // window = glfwCreateWindow(1024, 1024, "OmniFlow", NULL, NULL);
     if (window == NULL)

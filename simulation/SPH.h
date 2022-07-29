@@ -39,6 +39,8 @@ constexpr inline int32_t targetNeighbors = 20;
 constexpr inline scalar kernelSize = (scalar)1.778002;
 //// numerical Parameters
 constexpr inline scalar epsilon((scalar)1e-7);
+// constexpr inline scalar packing_2D = 0.39960767069134208;
+constexpr inline scalar packing_2D = 0.399200743165053487;
 
 struct Triangle {
     vec v0 = vec(0, 0), v1 = vec(0, 0), v2 = vec(0, 0);
@@ -84,7 +86,7 @@ class SPHSimulation{
     bool initDump = false;
     int32_t exportFrameCounter = 0;
     int32_t lastExport = 0.;
-
+    bool inletOnce = true;
     std::size_t cellsX, cellsY;
     vec domainMin, domainMax;
     scalar baseSupport, baseRadius;
@@ -94,8 +96,8 @@ class SPHSimulation{
     void initializeSPH();
     void initializeParameters();
 
-    std::vector<vec> genParticles(vec minCoord, vec maxCoord, scalar radius, scalar packing = 0.39960767069134208);
-    std::vector<vec> genParticlesCircle(vec minCoord, vec maxCoord, scalar radius, scalar packing = 0.39960767069134208);
+    std::vector<vec> genParticles(vec minCoord, vec maxCoord, scalar radius, scalar packing = packing_2D);
+    std::vector<vec> genParticlesCircle(vec minCoord, vec maxCoord, scalar radius, scalar packing = packing_2D);
     template<typename Func> auto boundaryFunc(const int32_t ptclIndex, Func&& c) {
     auto p = fluidPosition[ptclIndex];
     auto h = fluidSupport[ptclIndex];
