@@ -247,28 +247,41 @@ if(lastExport == 0) lastExport = -interval;
    outFile.write(reinterpret_cast<char*>(&num_ptcls), sizeof(num_ptcls));
    outFile.write(reinterpret_cast<char*>(&data), sizeof(simulationData));
 //    outFile.write(reinterpret_cast<char*>(rawData), payloadSize * num_ptcls);
-
+    fs::create_directories(actualPath/sstream.str());
     auto writeData = [&](auto data, std::string extension){
         using T = std::decay_t<decltype(data[0])>;
 
-        fs::path file = actualPath / sstream.str();
+        fs::path file = actualPath / sstream.str() / "data";
         file.replace_extension(extension);
         std::ofstream outFile;
         outFile.open(file, std::ios::out | std::ios::binary);
         outFile.write(reinterpret_cast<char*>(data.data()), sizeof(T) * numPtcls);
         outFile.close();
     };
+    writeData(fluidInitialPosition, "initialPosition");
     writeData(fluidPosition, "position");
     writeData(fluidVelocity, "velocity");
-    writeData(fluidAccel, "accel");
+    // writeData(fluidAccel, "accel");
     writeData(fluidPressure1, "pressure");
     writeData(fluidDensity, "density");
-    writeData(fluidVorticity, "vorticity");
+    // writeData(fluidVorticity, "vorticity");
     writeData(fluidAngularVelocity, "angularVelocity");
     writeData(fluidArea, "area");
     writeData(fluidRestDensity, "restDensity");
     writeData(fluidSupport, "support");
     writeData(fluidUID, "uid");
+
+    writeData(fluidGhostIndex, "ghostIndex");
+    writeData(fluidAdvectionVelocity, "advectionVelocity");
+    writeData(fluidPressureAccel, "pressureAccelSymmetric");    
+    writeData(fluidPressureAccelSimple, "pressureAccel");  
+    writeData(fluidPressureAccelDifference, "pressureAccelDifference");  
+    writeData(fluidPressureVelocity, "pressureVelocity");
+
+    writeData(fluidColorField, "colorField");    
+    writeData(fluidColorFieldGradient, "colorFieldGradient");  
+    writeData(fluidColorFieldGradientDifference, "colorFieldGradientDifference");  
+    writeData(fluidColorFieldGradientSymmetric, "colorFieldGradientSymmetric");
 
 
    summaryFile.write(reinterpret_cast<char*>(&data), sizeof(simulationData));
@@ -281,6 +294,8 @@ if(lastExport == 0) lastExport = -interval;
 
 
 void SPHSimulation::resetFrame(){
+    bool periodicX = pm.get<bool>("domain.periodicX");
+    bool periodicY = pm.get<bool>("domain.periodicY");
     auto& numPtcls = pm.get<int32_t>("props.numPtcls");
     for(int32_t i = 0; i < numPtcls; ++i){
     fluidAccel[i] = vec(0.,0.);
@@ -300,10 +315,22 @@ void SPHSimulation::resetFrame(){
     fluidDensityStar[i] = 0.;
     fluidNeighborList[i] = std::vector<int32_t>{};
     fluidTriangleNeighborList[i] = std::vector<int32_t>{};
+    fluidGhostIndex[i] = -1;
+
+    fluidPressureAccel[i]=vec(0,0);
+    fluidPressureAccelDifference[i]=vec(0,0);
+    fluidPressureAccelSimple[i]=vec(0,0);
+    fluidPressureVelocity[i]=vec(0,0);
+    fluidAdvectionVelocity[i]=vec(0,0);
+
 }
+ghostParticles.clear();
 for(int32_t c = 0; c < cellsX * cellsY; ++c){
     cellArray[c] = std::vector<int32_t>{};
 }
+auto virtualMin = pm.get<vec>("domain.virtualMin");
+auto virtualMax = pm.get<vec>("domain.virtualMax");
+
         auto domainEpsilon = pm.get<scalar>("domain.epsilon");
         std::vector<int32_t> filteredParticles;
         filteredParticles.reserve(numPtcls);
@@ -321,17 +348,43 @@ for(int32_t c = 0; c < cellsX * cellsY; ++c){
             }
 
             }
-            if(filtered) continue;
-            if (fluidPosition[i].x() < domainMin.x() + 0.9 * domainEpsilon || fluidPosition[i].x() > domainMax.x() - 0.9 * domainEpsilon ||
-                fluidPosition[i].y() < domainMin.y() + 0.9 * domainEpsilon || fluidPosition[i].y() > domainMax.y() - 0.9 * domainEpsilon) {
+            if (filtered)
+              continue;
+            auto [ci, cj] =
+                getCellIdx(fluidPosition[i].x(), fluidPosition[i].y());
+
+            if (!periodicX && !periodicY) {
+              if (fluidPosition[i].x() < domainMin.x() + 0.9 * domainEpsilon ||
+                  fluidPosition[i].x() > domainMax.x() - 0.9 * domainEpsilon ||
+                  fluidPosition[i].y() < domainMin.y() + 0.9 * domainEpsilon ||
+                  fluidPosition[i].y() > domainMax.y() - 0.9 * domainEpsilon) {
                 ++filteredCount;
-            }
-            else {
-                //auto ec = --emitCounter;
-                //if (ec <= 0) {
-                 //   emitCounter++;
-                    filteredParticles.push_back(i);
-                //}
+              } else {
+                filteredParticles.push_back(i);
+              }
+            } else if (periodicX && !periodicY) {
+              if (fluidPosition[i].x() < virtualMin.x() || fluidPosition[i].x() > virtualMax.x() ||
+                  fluidPosition[i].y() < domainMin.y() + 0.9 * domainEpsilon ||
+                  fluidPosition[i].y() > domainMax.y() - 0.9 * domainEpsilon) {
+                ++filteredCount;
+              } else {
+                filteredParticles.push_back(i);
+              }
+            } else if (periodicX && !periodicX) {
+              if (fluidPosition[i].x() < domainMin.x() + 0.9 * domainEpsilon ||
+                  fluidPosition[i].x() > domainMax.x() - 0.9 * domainEpsilon ||
+                  fluidPosition[i].y() < virtualMin.y() || fluidPosition[i].y() > virtualMax.y()) {
+                ++filteredCount;
+              } else {
+                filteredParticles.push_back(i);
+              }
+            } else {
+              if (fluidPosition[i].x() < virtualMin.x() || fluidPosition[i].x() > virtualMax.x() || 
+                  fluidPosition[i].y() < virtualMin.y() || fluidPosition[i].y() > virtualMax.y()) {
+                ++filteredCount;
+              } else {
+                filteredParticles.push_back(i);
+              }
             }
         }
         if (filteredCount > 0) {
@@ -345,14 +398,159 @@ for(int32_t c = 0; c < cellsX * cellsY; ++c){
                 fluidPriorPressure[i] = fluidPriorPressure[srcIdx];
                 fluidArea[i] = fluidArea[srcIdx];
                 fluidRestDensity[i] = fluidRestDensity[srcIdx];
-                fluidUID[i]=fluidUID[srcIdx];
+                fluidUID[i]=fluidCounter++;
+              fluidInitialPosition[i] = fluidPosition[srcIdx];
                 fluidSupport[i] = fluidSupport[srcIdx];
             }
 
  }
+// create ghost particles
+/*
+The domain:
+*-*-------------*-*
+|A|      B      |C|
+*-*-------------*-*
+| |             | |
+| |             | |
+|H|      0      |D|
+| |             | |
+| |             | |
+*-*-------------*-*
+|G|      F      |E|
+*-*-------------*-*
+Is mapped as
+*/
+// fillCells();
+// static int32_t oldGhostCount = 0;
+int32_t ghostCount = 0;
+auto emitGhost = [&numPtcls, &ghostCount, this](int32_t srcIdx, scalar xOffset, scalar yOffset){  
+      fluidPosition[numPtcls] = fluidPosition[srcIdx] + vec(xOffset, yOffset);
+      fluidVelocity[numPtcls] = fluidVelocity[srcIdx];
+      fluidAngularVelocity[numPtcls] = fluidAngularVelocity[srcIdx];
+      fluidVorticity[numPtcls] = fluidVorticity[srcIdx];
+      fluidPriorPressure[numPtcls] = fluidPriorPressure[srcIdx];
+      fluidArea[numPtcls] = fluidArea[srcIdx];
+      fluidRestDensity[numPtcls] = fluidRestDensity[srcIdx];
+      fluidUID[numPtcls]=fluidUID[srcIdx];
+      fluidInitialPosition[numPtcls] = fluidPosition[numPtcls];
+      fluidSupport[numPtcls] = fluidSupport[srcIdx];
+      fluidGhostIndex[numPtcls] = srcIdx;
+      ghostParticles.push_back(numPtcls);
+      numPtcls++;
+      ghostCount++;
+};
 
+auto fringe = baseSupport * (double) pm.get<int32_t>("domain.buffer");
+if(!periodicX && !periodicY) return;
+int32_t actualPtcls = numPtcls;
+for(int32_t i = 0; i < actualPtcls; ++i){
+  auto pi = fluidPosition[i];
+  if(periodicX){
+    if(pi.x() < virtualMin.x() + fringe){
+      emitGhost(i, virtualMax.x() - virtualMin.x(), 0.);
+    }
+    if(pi.x() > virtualMax.x() - fringe){
+      emitGhost(i, virtualMin.x() - virtualMax.x(), 0.);
+    }
+  }
+  if(periodicY){
+    if(pi.y() < virtualMin.y() + fringe){
+      emitGhost(i,0., virtualMax.y() - virtualMin.y());
+    }
+    if(pi.y() > virtualMax.y() - fringe){
+      emitGhost(i, 0.,virtualMin.y() - virtualMax.y());
+    }
+  }
+  if(periodicX && periodicY){
+    if(pi.x() < virtualMin.x() + fringe && pi.y() < virtualMin.y() + fringe)
+      emitGhost(i, virtualMax.x() - virtualMin.x(), virtualMax.y() - virtualMin.y());
 
+    if(pi.x() > virtualMax.x() - fringe && pi.y() < virtualMin.y() + fringe)
+      emitGhost(i, virtualMin.x() - virtualMax.x(), virtualMax.y() - virtualMin.y());
 
+    if(pi.x() > virtualMax.x() - fringe && pi.y() > virtualMax.y() - fringe)
+      emitGhost(i, virtualMin.x() - virtualMax.x(), virtualMin.y() - virtualMax.y());
+
+    if(pi.x() < virtualMin.x() + fringe && pi.y() > virtualMax.y() - fringe)
+      emitGhost(i, virtualMax.x() - virtualMin.x(), virtualMin.y() - virtualMax.y());
+
+  }
+}
+
+// std::cout << "Removed " << filteredCount << " ptcls, added " << ghostCount << "ghost ptcls, diff " << filteredCount - ghostCount << " actual diff " << oldGhostCount - filteredCount << std::endl;
+// oldGhostCount = ghostCount;
+return;
+
+// std::cout << "---- Beginning Ghost Generation ----\n";
+auto mapCells = [&numPtcls, this](int32_t ci, int32_t cj, int32_t cti, int32_t ctj, bool flipX = false, bool flipY = false){
+    vec cpos{ci * baseSupport, cj * baseSupport};
+    vec tpos{cti * baseSupport, ctj * baseSupport};
+
+    auto& cell = getCell(ci, cj);
+    for(auto srcIdx: cell){
+      vec relPos = fluidPosition[srcIdx] - cpos;
+      vec relative_position = relPos / baseSupport;
+      // if(flipX)
+      //   relative_position.x() = 1. - relative_position.x();
+      // if(flipY)
+      //   relative_position.y() = 1. - relative_position.y();
+      relPos = relative_position * baseSupport;
+
+      fluidPosition[numPtcls] = relPos + tpos;
+      // printf("Emitting Ghost %05d for %05d from [%g %g] to [%g %g]\n", numPtcls,srcIdx,fluidPosition[srcIdx].x(), fluidPosition[srcIdx].y(),fluidPosition[numPtcls].x(),fluidPosition[numPtcls].y());
+      fluidVelocity[numPtcls] = fluidVelocity[srcIdx];
+      fluidAngularVelocity[numPtcls] = fluidAngularVelocity[srcIdx];
+      fluidVorticity[numPtcls] = fluidVorticity[srcIdx];
+      fluidPriorPressure[numPtcls] = fluidPriorPressure[srcIdx];
+      fluidArea[numPtcls] = fluidArea[srcIdx];
+      fluidRestDensity[numPtcls] = fluidRestDensity[srcIdx];
+      fluidUID[numPtcls]=fluidUID[srcIdx];
+      fluidInitialPosition[numPtcls] = fluidPosition[numPtcls];
+      fluidSupport[numPtcls] = fluidSupport[srcIdx];
+      fluidGhostIndex[numPtcls] = srcIdx;
+      ghostParticles.push_back(numPtcls);
+      numPtcls++;
+    }
+
+};
+
+// map cell B
+if(periodicY){
+  for(int32_t ci = 1; ci < cellsX-1; ++ci)
+  for(int32_t cj = cellsY-2;cj < cellsY-1; ++cj)
+  mapCells(ci,cj, ci, 0,false,true);
+}
+// map cell D
+if(periodicX){
+  for(int32_t ci = cellsX-2; ci < cellsX-1; ++ci)
+  for(int32_t cj = 1;cj < cellsY-1; ++cj)
+  mapCells(ci,cj, 0, cj,true,false);
+}
+// map cell F
+if(periodicY){
+  for(int32_t ci = 1; ci < cellsX-1; ++ci)
+  for(int32_t cj = 1;cj < 2; ++cj)
+  mapCells(ci,cj, ci, cellsY-1,false,true);
+}
+// map cell H
+if(periodicX){
+  for(int32_t ci = 1; ci < 2; ++ci)
+  for(int32_t cj = 1;cj < cellsY-1; ++cj)
+  mapCells(ci,cj, cellsX-1, cj,true,false);
+}
+if(periodicX && periodicY){
+  mapCells(1,1,cellsX-1,cellsY-1,true);
+  mapCells(cellsX-2,1,0,cellsY-1,true);
+  mapCells(1,cellsY-2,cellsX-1,0,true);
+  mapCells(cellsX-2,cellsY-2,0,0,true);
+}
+for(auto idx : ghostParticles){
+  // std::cout << idx << " [ " << fluidGhostIndex[idx] << " ]\t";
+}
+// std::cout << std::endl;
+for(int32_t c = 0; c < cellsX * cellsY; ++c){
+    cellArray[c] = std::vector<int32_t>{};
+}
 }
 
 

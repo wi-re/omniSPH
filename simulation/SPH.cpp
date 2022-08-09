@@ -34,14 +34,19 @@ void SPHSimulation::timestep(){
         TIME_CODE(5, "Simulation - Vorticity", computeVorticity());
         TIME_CODE(6, "Simulation - External", externalForces());
         // if(!useEOS){
+        if(pm.get<bool>("sim.incompressible")){
              TIME_CODE(7, "Simulation - Divergence", divergenceSolve());
              TIME_CODE(8, "Simulation - Density", densitySolve());
+        }
+        else{
+             TIME_CODE(7, "Simulation - EOS Pressure", gaseousSPH());
+        }
         // }
         // else{
         //     TIME_CODE(7, "Simulation - EOS Pressure", stateSPH());
         // }
          TIME_CODE(9, "Simulation - XSPH", XSPH());
-        //TIME_CODE(10, "Simulation - Vorticity", refineVorticity());
+        TIME_CODE(10, "Simulation - Vorticity", refineVorticity());
         TIME_CODE(11, "Simulation - Integration", Integrate());
         //TIME_CODE(12, "Simulation - BXSPH", BXSPH());
         TIME_CODE(13, "Simulation - Dump", dump());
@@ -66,6 +71,7 @@ void SPHSimulation::neighborList(){
 
         for (int32_t xi = -1; xi <= 1; ++xi) {
             for (int32_t yi = -1; yi <= 1; ++yi) {
+                if(ix+xi <0 || ix+xi >=cellsX || iy+yi < 0 || iy +yi >= cellsY) continue;
                 auto xxi = std::clamp(ix + xi, 0, (int32_t) cellsX -1);
                 auto yyi = std::clamp(iy + yi, 0, (int32_t) cellsY -1);
                 const auto& cell = getCell(xxi, yyi);
@@ -231,6 +237,7 @@ std::tuple<scalar, scalar, std::vector<scalar>> SPHSimulation::colorMap(property
                 case property_t::priorPressure:     s = fluidPriorPressure[i]; break;
                 case property_t::UID:               s = fluidUID[i]; break;
                 case property_t::neighbors:         s = fluidNeighborList[i].size(); break;
+                case property_t::ghostIndex: s =fluidGhostIndex[i];break;
             }
             min = std::min(s, min);
             max = std::max(s, max);
@@ -263,6 +270,7 @@ std::tuple<scalar, scalar, std::vector<scalar>> SPHSimulation::colorMap(property
                 case property_t::priorPressure:     s = fluidPriorPressure[i]; break;
                 case property_t::UID:               s = fluidUID[i]; break;
                 case property_t::neighbors:         s = fluidNeighborList[i].size(); break;
+                case property_t::ghostIndex: s =fluidGhostIndex[i];break;
             }
             mappedData[i] = (s - min) / (max - min);
             if(max == min)

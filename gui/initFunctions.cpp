@@ -26,7 +26,7 @@ void GUI::initGL(int argc, char* argv[]) {
     auto domainWidth = domainMax.x() - domainMin.x();
     auto domainHeight = domainMax.y() - domainMin.y();
 
-    auto maxWidth = 3800;
+    auto maxWidth = 3600;
     auto maxHeight = 2048;
     auto xrel = ((double) maxWidth) / domainWidth;
     auto yrel = ((double) maxHeight) / domainHeight;
@@ -36,12 +36,12 @@ void GUI::initGL(int argc, char* argv[]) {
     std::cout << "Ratios: " << xrel << " x " << yrel << std::endl;
 
     if(xrel < yrel){
-        screenWidth = 3800;
-        screenHeight =  2048. * domainHeight / domainWidth;
+        screenWidth = maxWidth;
+        screenHeight =  maxWidth * domainHeight / domainWidth;
     }
     else{
-        screenWidth = 3800 * domainWidth / domainHeight;
-        screenHeight =  2048.;
+        screenWidth = maxHeight * domainWidth / domainHeight;
+        screenHeight =  maxHeight;
     }
     std::cout << "Window Resolution: " << screenWidth << " x " << screenHeight << std::endl;
 

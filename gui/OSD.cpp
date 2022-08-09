@@ -59,8 +59,9 @@ void GUI::OSD(){
         if (y > 1.0)
             y -= 1.0;
         y = 1.0 - y;
-        auto domainMin = simulationState.pm.get<vec>("domain.min");
-        auto domainMax = simulationState.pm.get<vec>("domain.max");
+        auto baseSupport = simulationState.pm.get<scalar>("props.baseSupport");
+        auto domainMin = simulationState.pm.get<vec>("domain.min");// - vec(baseSupport,baseSupport);
+        auto domainMax = simulationState.pm.get<vec>("domain.max");// + vec(baseSupport,baseSupport);
         auto domainWidth = domainMax.x() - domainMin.x();
         auto domainHeight = domainMax.y() - domainMin.y();
 

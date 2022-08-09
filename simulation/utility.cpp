@@ -75,6 +75,8 @@ void SPHSimulation::emitParticles(){
             fluidVorticity[numPtcls] = 0.;
             fluidAngularVelocity[numPtcls] = 0.;
             fluidUID[numPtcls] = fluidCounter++;
+            fluidInitialPosition[numPtcls] = pos;
+            fluidGhostIndex[numPtcls] = -1;
 
             // getCell(pos.x(), pos.y()).push_back(numPtcls);
 
@@ -91,8 +93,9 @@ void SPHSimulation::emitParticles(){
 std::vector<vec> fluidSource::genParticles() const{
     scalar area = double_pi * emitterRadius * emitterRadius;
     scalar support = std::sqrt(area * targetNeighbors / double_pi);
-    scalar packing = packing_2D * support;
-    // printf("radius: %g, area: %g, support: %g, packing: %g\n", emitterRadius, area, support, packing);
+    scalar packing = packing_2D * support / compressionRatio;
+    printf("Compression: %g | %g | %g\n", compressionRatio, packing, packing_2D * support);
+    printf("radius: %g, area: %g, support: %g, packing: %g\n", emitterRadius, area, support, packing);
     vec center = (emitterMin + emitterMax) / 2.;
     vec pdiff = (emitterMax - emitterMin) / 2.;
     scalar radius = std::min(pdiff.x(), pdiff.y());
@@ -105,7 +108,7 @@ std::vector<vec> fluidSource::genParticles() const{
   auto requiredSlices_x = ::ceil(diff.x() / packing);
   //auto requiredSlices_y = ::ceil(diff.y() / (::sqrt(3.0) * packing));
   auto requiredSlices_y = ::ceil(diff.y() / packing);
-//  std::cout << "Generating particles on a " << requiredSlices_x << " x " << requiredSlices_y << " hex grid " << std::endl;
+ std::cout << "Generating particles on a " << requiredSlices_x << " x " << requiredSlices_y << " grid " << std::endl;
   std::vector<vec> points;
   for (int32_t x_it = 0; x_it < requiredSlices_x + 1; ++x_it)
     for (int32_t y_it = 0; y_it < requiredSlices_y + 1; ++y_it) {
@@ -118,7 +121,7 @@ std::vector<vec> fluidSource::genParticles() const{
                 //std::cout << pos.x() << " " << pos.y() << " -> " << d.x() << " " << d.y() << " -> " << l << " / " << radius << " -> " <<(l>= radius) << std::endl;
                 if (l >= radius) continue;
                 }
-      if (pos.x() < emitterMax.x() && pos.y() <= emitterMax.y()+ support * 0.2)
+      if (pos.x() <= emitterMax.x() && pos.y() <= emitterMax.y())
         points.emplace_back(pos.x(), pos.y());
     }
   return points;
@@ -139,7 +142,7 @@ std::vector<vec> SPHSimulation::genParticles(vec minCoord, vec maxCoord, scalar 
   auto requiredSlices_x = ::ceil(diff.x() / packing);
   //auto requiredSlices_y = ::ceil(diff.y() / (::sqrt(3.0) * packing));
   auto requiredSlices_y = ::ceil(diff.y() / packing);
- // std::cout << "Generating particles on a " << requiredSlices_x << " x " << requiredSlices_y << " hex grid " << std::endl;
+ std::cout << "Generating particles on a " << requiredSlices_x << " x " << requiredSlices_y << " grid " << std::endl;
   std::vector<vec> points;
   for (int32_t x_it = 0; x_it < requiredSlices_x + 1; ++x_it)
     for (int32_t y_it = 0; y_it < requiredSlices_y + 1; ++y_it) {

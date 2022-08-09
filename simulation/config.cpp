@@ -5,6 +5,7 @@
 #include "2DMath.h"
 #include <imgui/imgui.h>
 #include <mutex>
+#include "PerlinNoise.hpp"
 
 
 namespace YAML {
@@ -71,7 +72,8 @@ void SPHSimulation::initializeParameters(){
         std::string("priorPressure"),
 
         std::string("UID"),
-        std::string("neighbors")
+        std::string("neighbors"),
+        std::string("ghostIndex")
     };
 
     static auto cMapPresets = std::vector<std::string>{[this]() {
@@ -163,6 +165,18 @@ void SPHSimulation::initializeParameters(){
     pm.newParameter("dfsph.divergenceError", scalar(0), { .constant = true });
     pm.newParameter("dfsph.divergenceSolve", true, { .constant = false });
 
+    pm.newParameter("sim.incompressible", false, { .constant = false });
+    pm.newParameter("sim.kappa", 1.3, { .constant = false, .range = genRange(0.1, 3.0) });
+
+    pm.newParameter("domain.periodicX", false, { .constant = true }); 
+    pm.newParameter("domain.periodicY", false, { .constant = true });
+    pm.newParameter("domain.buffer", 2, { .constant = true });
+    pm.newParameter("domain.virtualMin", vec(-1.,-1.), { .constant = true });
+    pm.newParameter("domain.virtualMax", vec(1.,1.), { .constant = true });
+
+    pm.newParameter("render.showGrid", false, { .constant = false });
+    pm.newParameter("render.showPtcls", true, { .constant = false });
+
     pm.get<scalar>("ptcl.boundaryViscosity") = 0.;
     pm.get<scalar>("ptcl.viscosityConstant") = 0.001;
     pm.get<scalar>("sim.maxDt") = 0.001;
@@ -204,6 +218,16 @@ void SPHSimulation::initializeParameters(){
         node["timeLimit"] = encode(scalar, var.timeLimit);
         node["ramp"] = encode(scalar, var.emitterRampTime);
         node["radius"] = encode(scalar, var.emitterRadius);
+        node["compression"] = encode(scalar, var.compressionRatio);
+
+        node["densityNoise"] = encode(bool, var.densityNoise);
+        node["areaNoise"] = encode(bool, var.areaNoise);
+        node["velocityNoise"] = encode(bool, var.velocityNoise);
+        node["noiseAmplitude"] = encode(scalar, var.noiseAmplitude);
+        node["noiseOctaves"] = encode(int32_t, var.noiseOctaves);
+        node["noiseSeed"] = encode(int32_t, var.noiseSeed);
+        node["noiseFrequency"] = encode(scalar, var.noiseFrequency);
+
         node["shape"] = var.shape == shape_t::rectangular ? "rectangular" : "spherical";
         switch(var.emitter){
             case emitter_t::inlet: node["type"] = "inlet"; break;
@@ -221,7 +245,17 @@ void SPHSimulation::initializeParameters(){
         var.emitterVelocity = callDecoder(vec, node["velocity"], var.emitterVelocity);
         var.timeLimit = callDecoder(scalar, node["timeLimit"], var.timeLimit);
         var.emitterRampTime = callDecoder(scalar, node["ramp"], var.emitterRampTime);
-        var.emitterRadius = callDecoder(scalar, node["radius"], var.emitterRadius);        
+        var.emitterRadius = callDecoder(scalar, node["radius"], var.emitterRadius);     
+        var.compressionRatio = callDecoder(scalar, node["compression"], var.compressionRatio);   
+        
+        var.densityNoise = callDecoder(bool, node["densityNoise"], var.densityNoise); 
+        var.areaNoise = callDecoder(bool, node["areaNoise"], var.areaNoise); 
+        var.velocityNoise = callDecoder(bool, node["velocityNoise"], var.velocityNoise); 
+        var.noiseAmplitude = callDecoder(scalar, node["noiseAmplitude"], var.noiseAmplitude); 
+        var.noiseOctaves = callDecoder(int32_t, node["noiseOctaves"], var.noiseOctaves); 
+        var.noiseSeed = callDecoder(int32_t, node["noiseSeed"], var.noiseSeed); 
+        var.noiseFrequency = callDecoder(scalar, node["noiseFrequency"], var.noiseFrequency); 
+
         var.shape = shape_t::rectangular;
         if(node["shape"]){
             std::string s = node["shape"].as<std::string>();
@@ -349,13 +383,63 @@ void SPHSimulation::initializeSPH(){
     //     fluidSources.push_back(fs);
     // }
     pm.get<scalar>("props.baseRadius") = 0.;
+    scalar minCompression = DBL_MAX; 
     for(auto& src : fluidSources){
         pm.get<scalar>("props.baseRadius") = std::max(pm.get<scalar>("props.baseRadius"), src.emitterRadius);
+        minCompression = std::min(minCompression, src.compressionRatio);
     }
     pm.get<scalar>("props.baseSupport") = std::sqrt(pm.get<scalar>("props.baseRadius") * pm.get<scalar>("props.baseRadius") * targetNeighbors);
+baseSupport = pm.get<scalar>("props.baseSupport");
+baseRadius = pm.get<scalar>("props.baseRadius");
+        bool periodicX = pm.get<bool>("domain.periodicX");
+        bool periodicY = pm.get<bool>("domain.periodicY");
 
 
+    pm.get<vec>("domain.virtualMin") =  pm.get<vec>("domain.min");
+    pm.get<vec>("domain.virtualMax") =  pm.get<vec>("domain.max");
+    if(periodicX || periodicY){
+        scalar area = double_pi * pm.get<scalar>("props.baseRadius") * pm.get<scalar>("props.baseRadius");
+        scalar support = std::sqrt(area * targetNeighbors / double_pi);
+        scalar packing = packing_2D * support / minCompression;
+        vec minVolume{DBL_MAX,DBL_MAX}, maxVolume{-DBL_MAX, -DBL_MAX};
+        for(auto& src : fluidSources){
+            auto n =  ::ceil((src.emitterMax.x() - src.emitterMin.x()) / packing);
+            auto m = ::ceil((src.emitterMax.y() - src.emitterMin.y()) / packing);
+            auto newX = src.emitterMin.x() + n* packing;
+            auto newY = src.emitterMin.y() + m * packing;
+            printf("Changed emitterMax from [%g %g] to [%g %g] (diff: %g %g @ %g %g)\n", src.emitterMax.x(), src.emitterMax.y(), newX, newY, newX - src.emitterMax.x(), newY - src.emitterMax.y(),n,m);
+            src.emitterMax.x() = newX;
+            src.emitterMax.y() = newY;
+        }
+        for(auto& src : fluidSources){
+            minVolume.x() = std::min(minVolume.x(), src.emitterMin.x());
+            minVolume.y() = std::min(minVolume.y(), src.emitterMin.y());
+            maxVolume.x() = std::max(maxVolume.x(), src.emitterMax.x());
+            maxVolume.y() = std::max(maxVolume.y(), src.emitterMax.y());
+        }
+        auto oldDomainMin = pm.get<vec>("domain.min");
+        auto oldDomainMax = pm.get<vec>("domain.max");
+        pm.get<vec>("domain.min") = vec(minVolume.x() - packing/2., minVolume.y() - packing/2.);
+        pm.get<vec>("domain.max") = vec(maxVolume.x() + packing/2., maxVolume.y() + packing/2.);
+        printf("Changed domain from [%g %g] x [%g %g] to [%g %g] x [%g %g]\n", 
+                oldDomainMin.x(), oldDomainMin.y(), oldDomainMax.x(), oldDomainMax.y(), 
+                pm.get<vec>("domain.min").x(), pm.get<vec>("domain.min").y(), pm.get<vec>("domain.max").x(), pm.get<vec>("domain.max").y());
+        pm.get<vec>("domain.virtualMin") =  pm.get<vec>("domain.min");
+        pm.get<vec>("domain.virtualMax") =  pm.get<vec>("domain.max");
+        oldDomainMin = pm.get<vec>("domain.min");
+        oldDomainMax = pm.get<vec>("domain.max");
 
+        auto buffer = (double) pm.get<int32_t>("domain.buffer");
+        pm.get<vec>("domain.min") = pm.get<vec>("domain.min") - vec(baseSupport * buffer, baseSupport * buffer);
+        pm.get<vec>("domain.max") = pm.get<vec>("domain.max") + vec(baseSupport * buffer, baseSupport * buffer);
+        printf("%g %g %g\n", buffer, baseSupport, buffer * baseSupport);
+        printf("Changed domain from [%g %g] x [%g %g] to [%g %g] x [%g %g]\n", 
+                oldDomainMin.x(), oldDomainMin.y(), oldDomainMax.x(), oldDomainMax.y(), 
+                pm.get<vec>("domain.min").x(), pm.get<vec>("domain.min").y(), pm.get<vec>("domain.max").x(), pm.get<vec>("domain.max").y());
+        printf("Changed domain from [%g %g] x [%g %g] to [%g %g] x [%g %g]\n", 
+                pm.get<vec>("domain.virtualMin").x(), pm.get<vec>("domain.virtualMin").y(), pm.get<vec>("domain.virtualMax").x(), pm.get<vec>("domain.virtualMax").y(), 
+                pm.get<vec>("domain.min").x(), pm.get<vec>("domain.min").y(), pm.get<vec>("domain.max").x(), pm.get<vec>("domain.max").y());
+    }
 
     fluidPosition.resize(n);
     fluidVelocity.resize(n);
@@ -363,7 +447,7 @@ void SPHSimulation::initializeSPH(){
     fluidPredVelocity.resize(n);
     fluidPredAccel.resize(n);
     fluidPredPosition.resize(n);
-    fluidDensity.resize(n);
+    fluidDensity.resize(n);;
     fluidVorticity.resize(n);
     fluidAngularVelocity.resize(n);
     fluidArea.resize(n);
@@ -380,7 +464,20 @@ void SPHSimulation::initializeSPH(){
     fluidPriorPressure.resize(n);
     fluidNeighborList.resize(n);
     fluidUID.resize(n);
+    fluidGhostIndex.resize(n);
+    fluidInitialPosition.resize(n);
     fluidTriangleNeighborList.resize(n);
+
+    fluidAdvectionVelocity.resize(n);
+    fluidPressureVelocity.resize(n);
+    fluidPressureAccel.resize(n);
+    fluidPressureAccelSimple.resize(n);
+    fluidPressureAccelDifference.resize(n);
+
+    fluidColorField.resize(n);
+    fluidColorFieldGradient.resize(n);
+    fluidColorFieldGradientDifference.resize(n);
+    fluidColorFieldGradientSymmetric.resize(n);
 
     scalar baseArea = double_pi * pm.get<scalar>("props.baseRadius") * pm.get<scalar>("props.baseRadius");
     baseRadius = pm.get<scalar>("props.baseRadius");
@@ -459,7 +556,7 @@ void SPHSimulation::initializeSPH(){
         auto adjustedEpsilon = bottomRows * packing - 0.99 * spacing;
         domainEpsilon = adjustedEpsilon;
 
-
+        if(!periodicX && !periodicY){
         addRect(domainMin.x() + 0, 
                 domainMin.y() + 0, 
                 domainMin.x() + adjustedEpsilon, 
@@ -476,7 +573,27 @@ void SPHSimulation::initializeSPH(){
                 domainMin.y() + domainHeight - adjustedEpsilon, 
                 domainMin.x() + domainWidth - adjustedEpsilon, 
                 domainMin.y() + domainHeight);
-
+        }
+        else if(periodicX && !periodicY){
+        addRect(domainMin.x() + 0, 
+                domainMin.y() + 0, 
+                domainMax.x(), 
+                domainMin.y() + adjustedEpsilon);
+        addRect(domainMin.x(), 
+                domainMax.y() - adjustedEpsilon, 
+                domainMax.x(), 
+                domainMax.y());
+        }
+        else if(periodicY && !periodicX){
+        addRect(domainMin.x() + 0, 
+                domainMin.y() + 0, 
+                domainMin.x() + adjustedEpsilon, 
+                domainMax.y());
+        addRect(domainMax.x() - adjustedEpsilon, 
+                domainMin.y(), 
+                domainMax.x(), 
+                domainMax.y());
+        }
 
     
         scalar threshold = packing_2D * baseSupport * 0.5;
@@ -611,18 +728,34 @@ void SPHSimulation::initializeSPH(){
             //cellTriangleArray
         }
 
+
+    // bool periodicX = pm.get<bool>("domain.periodicX");
+    // bool periodicY = pm.get<bool>("domain.periodicY");
+
     auto& numPtcls = pm.get<int32_t>("props.numPtcls");
     for(const auto& source: fluidSources){
         if(source.emitter != emitter_t::oneTime){ continue;}
+    
+        printf("noise: %d seed: %d amp: %g freq: %g octaves: %d\n",source.velocityNoise ? 1 : 0, source.noiseSeed,source.noiseAmplitude,source.noiseFrequency,source.noiseOctaves);
+
+        const siv::PerlinNoise::seed_type seed = source.noiseSeed;
+
+        const siv::PerlinNoise perlin_x{ seed };
+        const siv::PerlinNoise perlin_y{ seed * seed };
+
+
         auto ptcls = source.genParticles();
 
         auto support = std::sqrt(source.emitterRadius * source.emitterRadius * targetNeighbors);
-
         for(int32_t i = 0; i < ptcls.size(); ++ i){
         auto [ix, iy] = getCellIdx(ptcls[i].x(), ptcls[i].y());
         bool emit = true;
+        if(source.compressionRatio == 1.)
+        { 
         for (int32_t xi = -1; xi <= 1; ++xi) {
             for (int32_t yi = -1; yi <= 1; ++yi) {
+                if(xi+ix < 0 || xi+ix >= cellsX) continue;
+                if(yi+iy < 0 || yi+iy >= cellsY) continue;
                 const auto& cell = getCell(ix + xi, iy + yi);
                 for (auto j : cell) {
                     auto& pj = fluidPosition[j];
@@ -634,20 +767,76 @@ void SPHSimulation::initializeSPH(){
                 }
             }
         }
+        }
+        auto [ci,cj] = getCellIdx(ptcls[i].x(), ptcls[i].y());
+        // if(periodicX){
+        //     if(ci == 0 || ci == cellsX - 1)
+        //         emit = false;
+        // }
+        // if(periodicY){
+        //     if(cj == 0 || cj == cellsY - 1)
+        //         emit = false;
+        // }
+        
         for(auto t: boundaryTriangles){
             if(pointInTriangle(ptcls[i], t.v0, t.v1, t.v2))
                 emit = false;
         }
         if(!emit)continue;
+        auto virtualMin = pm.get<vec>("domain.virtualMin");
+        auto virtualMax = pm.get<vec>("domain.virtualMax");
+        auto torusNoise = [virtualMin, virtualMax, source](auto perlinNoiseGenerator, scalar x,scalar y){
+            auto x_ = (x- virtualMin.x())/(virtualMax.x() - virtualMin.x()) * 2. * double_pi;
+            auto y_ = (y- virtualMin.y())/(virtualMax.y() - virtualMin.y()) * 2. * double_pi;
+            // x_ = fmodf(x_ * source.noiseFrequency, 2. * double_pi);
+            // y_ = fmodf(y_ * source.noiseFrequency, 2. * double_pi);
+
+            auto r1 = source.noiseFrequency * 1.;
+            auto r2 = source.noiseFrequency * 0.5;
+            auto u = (r1 + r2 * cos(x_)) * cos(y_);
+            auto v = (r1 + r2 * cos(x_)) * sin(y_);
+            auto w = r2 * sin(x_);
+
+            return source.noiseAmplitude * perlinNoiseGenerator.octave3D_11(u,v,w,
+                source.noiseOctaves);
+        };
+
+
+        if(source.velocityNoise){
+            auto vel_x = torusNoise(perlin_x, ptcls[i].x(), ptcls[i].y());
+            auto vel_y = torusNoise(perlin_y, ptcls[i].x(), ptcls[i].y());
+
+            // auto vel_x = source.noiseAmplitude * perlin_x.octave2D_11(ptcls[i].x() * source.noiseFrequency, ptcls[i].y() * source.noiseFrequency, source.noiseOctaves);
+            // auto vel_y = source.noiseAmplitude * perlin_y.octave2D_11(ptcls[i].x() * source.noiseFrequency, ptcls[i].y() * source.noiseFrequency, source.noiseOctaves);
+            fluidVelocity[numPtcls]         = source.emitterVelocity + vec{vel_x, vel_y};
+        }else{
+            fluidVelocity[numPtcls]         = source.emitterVelocity;// + vec{vel_x, vel_y};
+        }
             fluidPosition[numPtcls]         = ptcls[i];
-            fluidVelocity[numPtcls]         = source.emitterVelocity;
+            // fluidVelocity[numPtcls]         = source.emitterVelocity;// + vec{vel_x, vel_y};
+        if(source.areaNoise){
+            auto noise = 0.1 * perlin_y.octave2D_11(ptcls[i].x() * source.noiseFrequency, ptcls[i].y() * source.noiseFrequency, source.noiseOctaves);
+            noise = source.noiseAmplitude * noise;
+            noise = 1. + noise;
+            fluidArea[numPtcls]             = source.emitterRadius * source.emitterRadius * double_pi * noise;
+        }
+        else
             fluidArea[numPtcls]             = source.emitterRadius * source.emitterRadius * double_pi;
+        if(source.densityNoise){
+            auto noise = 0.1 * perlin_y.octave2D_11(ptcls[i].x() * source.noiseFrequency, ptcls[i].y() * source.noiseFrequency, source.noiseOctaves);
+            noise = source.noiseAmplitude * noise;
+            noise = 1. + noise;
+            fluidRestDensity[numPtcls]      = source.emitterDensity * noise;
+        }
+        else
             fluidRestDensity[numPtcls]      = source.emitterDensity;
             fluidSupport[numPtcls]          = std::sqrt(fluidArea[numPtcls] * targetNeighbors / double_pi);
             fluidPriorPressure[numPtcls]    = 0.;
             fluidVorticity[numPtcls] = 0.;
             fluidAngularVelocity[numPtcls] = 0.;
             fluidUID[numPtcls] = fluidCounter++;
+            fluidInitialPosition[numPtcls] = ptcls[i];
+            fluidGhostIndex[numPtcls] = -1;
 
             getCell(ptcls[i].x(), ptcls[i].y()).push_back(numPtcls);
 
@@ -656,6 +845,7 @@ void SPHSimulation::initializeSPH(){
     }
     this->boundaryTriangles = boundaryTriangles;
     neighborList();
+    // return;
 
     
         // auto domainEpsilon = pm.get<scalar>("domain.epsilon");
@@ -705,6 +895,8 @@ void SPHSimulation::initializeSPH(){
                 fluidArea[i] = fluidArea[srcIdx];
                 fluidRestDensity[i] = fluidRestDensity[srcIdx];
                 fluidUID[i]=fluidUID[srcIdx];
+                fluidInitialPosition[numPtcls] = fluidPosition[srcIdx];
+                fluidGhostIndex[i] = fluidGhostIndex[srcIdx];
                 fluidSupport[i] = fluidSupport[srcIdx];
             }
 

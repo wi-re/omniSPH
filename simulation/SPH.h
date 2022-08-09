@@ -65,8 +65,17 @@ struct fluidSource{
     scalar emitterOffset = 0.;
     scalar timeLimit = -1.;
     scalar emitterRampTime = -1.;
+    scalar compressionRatio = 1.;
 
     vec emitterVelocity = vec(0,0);
+
+    bool velocityNoise = false;
+    bool densityNoise = false;
+    bool areaNoise = false;
+    scalar noiseAmplitude = 1.;
+    scalar noiseFrequency = 1.;
+    int32_t noiseOctaves = 4;
+    int32_t noiseSeed = 0x12345678;
 
     shape_t shape = shape_t::rectangular;
     emitter_t emitter = emitter_t::oneTime;
@@ -114,6 +123,13 @@ class SPHSimulation{
     std::vector<int32_t>& getBoundaryCell(int32_t xi, int32_t yi);
     std::vector<int32_t>& getTriangleCell(int32_t xi, int32_t yi);
 
+template<typename T> auto syncGhost(std::vector<T>& ptr){
+    for(auto idx : ghostParticles){
+        ptr[idx] = ptr[fluidGhostIndex[idx]];
+    }
+}
+
+
 public:
     SPHSimulation(std::string _config = ""){
         if(_config != ""){
@@ -121,7 +137,8 @@ public:
             initializeParameters();
             initializeSPH();
         }else{
-            config = YAML::Load(R"(
+            config = YAML::Load(
+R"(
 fluids:
     - min: [0.2, 0.4]
       max: [0.4, 0.6]
@@ -168,7 +185,9 @@ export:
     active: true
     limit: 2.0
     interval: 5
-)");
+)"
+
+);
             initializeParameters();
             initializeSPH();
         }
@@ -179,6 +198,7 @@ export:
     std::vector<scalar> fluidAlpha, fluidActualArea, fluidPressure1, fluidPressure2, fluidBoundaryPressure, fluidSourceTerm, fluidDpDt, fluidDensityStar, fluidPriorPressure;
     std::vector<std::vector<int32_t>> fluidNeighborList, fluidTriangleNeighborList;
     std::vector<int32_t> fluidUID;
+    std::vector<int32_t> fluidGhostIndex;
     int32_t fluidCounter = 0;
     std::vector<std::tuple<scalar, scalar, scalar>> boundaryBarycentricPressure;
     std::vector<vec> boundaryPolygon;
@@ -192,13 +212,18 @@ export:
 
     std::vector<fluidSource> fluidSources;
     std::vector<gravitySource> gravitySources;
+    std::vector<int32_t> ghostParticles;
 
+    std::vector<vec> fluidColorFieldGradient, fluidColorFieldGradientDifference, fluidColorFieldGradientSymmetric;
+    std::vector<scalar> fluidColorField;
+
+    std::vector<vec> fluidAdvectionVelocity, fluidPressureAccel, fluidPressureAccelSimple, fluidPressureAccelDifference, fluidPressureVelocity, fluidInitialPosition;
 
     enum struct property_t{
         position, velocity, accel, predVelocity, predAccel, predPosition,
         density, vorticity, angularVelocity, area, restDensity, support,
         alpha, actualArea, pressure1, pressure2, boundaryPressure, sourceTerm, dpdt, rhoStar, priorPressure,
-        UID, neighbors
+        UID, neighbors, ghostIndex
     };
 
     std::pair<int32_t, int32_t> getCellIdx(scalar x, scalar y);
@@ -227,11 +252,15 @@ export:
     int32_t divergenceSolve();
     int32_t densitySolve();
 
+    void evalPressureForce();
+
     void XSPH();
     void computeVorticity();
     void refineVorticity();
     void externalForces();
     void BXSPH();
+
+    void gaseousSPH();
 
     void dump();
 

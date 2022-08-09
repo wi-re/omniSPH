@@ -28,6 +28,12 @@ void GUI::keyCallback(GLFWwindow* window, int key, int scancode, int action, int
 		grid = !grid;
 		break;
 	}
+	case GLFW_KEY_O:
+	{
+		auto& grid = simulationState.pm.get<bool>("render.showPtcls");
+		grid = !grid;
+		break;
+	}
 	case GLFW_KEY_1: simulationState.pm.get<int32_t>("colorMap.map") = 0; break;
 	case GLFW_KEY_2: simulationState.pm.get<int32_t>("colorMap.map") = 1; break;
 	case GLFW_KEY_3: simulationState.pm.get<int32_t>("colorMap.map") = 2; break;
@@ -35,7 +41,7 @@ void GUI::keyCallback(GLFWwindow* window, int key, int scancode, int action, int
 	case GLFW_KEY_F: simulationState.pm.get<bool>("field.render") = !simulationState.pm.get<bool>("field.render"); break;
 	case GLFW_KEY_M: simulationState.pm.get<bool>("marching.render") = !simulationState.pm.get<bool>("marching.render"); break;
 	case GLFW_KEY_N: simulationState.pm.get<bool>("marching.solid") = !simulationState.pm.get<bool>("marching.solid"); break;
-	case GLFW_KEY_O: simulationState.pm.get<bool>("ptcl.render") = !simulationState.pm.get<bool>("ptcl.render"); break;
+	
 	case GLFW_KEY_E: emit=true; break;
 	}
 }

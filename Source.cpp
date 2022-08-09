@@ -185,51 +185,79 @@ else{
 
     simulationState = SPHSimulation(R"(
 fluids:
-    - min: [0.2, 0.4]
-      max: [0.4, 0.6]
-      velocity: [1,0]
-      radius: 0.00279783
-      type: once
-      shape: spherical
-    - min: [0.6, 0.4]
-      max: [0.8, 0.6]
-      velocity: [-1,0]
-      radius: 0.00279783
-      type: once
-      shape: spherical
+     - min: [-1, -1.]
+       max: [1., 1.]
+       radius: 0.01
+       type: once
+       velocity: [0.,0.]
+       compression: 1.50005
+       velocityNoise: true
+       areaNoise: false
+       noiseAmplitude: 1.0
+       noiseOctaves: 4
+       noiseFrequency: 2.0
+       noiseSeed: 1337
+       density: 1000
+f:
+     - min: [-0.1, -0.1]
+       max: [0.1, 0.1]
+       radius: 0.01
+       type: source
+       velocity: [1,0]
+       compression: 1.
+       ramp: 1.0
+
 
 gravity:
-    - pointSource: false
-      direction: [0., -1.]
-      magnitude: 9.81
+    - pointSource: true
+      location: [.0, .0]
+      magnitude: 0.0
 
-triangles:
-    - v0: [0.375, 0.02]
-      v1: [0.40625, 0.02]
-      v2: [0.40625, 0.06]
-    - v0: [0.40625, 0.02]
-      v1: [0.59375, 0.02]
-      v2: [0.59375, 0.06]
-    - v0: [0.40625, 0.02]
-      v1: [0.40625, 0.06]
-      v2: [0.59375, 0.06]
-    - v0: [0.59375, 0.02]
-      v1: [0.625, 0.02]
-      v2: [0.59375, 0.06]
+triangless:
+    - v0: [-1.5, 0.25]
+      v1: [-1.0, 0.125]
+      v2: [-1.0, 0.375]
+
+video:
+  active: true
+  fps: 100.0
+
+props:
+    maxnumptcls: 512000
+    backgroundPressure: false
+
+dfsph:
+  divergenceSolve: true
+  densityEta: 0.001
 
 domain:
-    min: [0,0]
+    min: [-1, -1]
     max: [1, 1]
     epsilon: 0.02
+    periodicX: true
+    periodicY: true
 
 sim:
-    maxDt: 0.0005
-    minDt: 0.0005
+    maxDt: 0.0025
+    minDt: 0.0025
+    incompressible: false
+    kappa: 1.5
+
+ptcl:
+    viscosityConstant: 0.05
+vorticity:
+    nu_t: 0.05
 
 export:
     active: true
-    limit: 2.0
-    interval: 5
+    limit: 4.0
+    interval: 1
+
+colorMap:
+  buffer: 'velocity'
+  auto: true
+  min: 0.
+  max: 10.
 )");
 }
     auto& gui = GUI::instance();

@@ -206,9 +206,11 @@ void render(int32_t screenWidth, int32_t screenHeight) {
     // reset the openGL state
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity();
+    auto baseSupport = simulationState.pm.get<scalar>("props.baseSupport");
+    baseSupport = 0.;
     glOrtho(
-        simulationState.pm.get<vec>("domain.min").x(), simulationState.pm.get<vec>("domain.max").x(), 
-        simulationState.pm.get<vec>("domain.min").y(), simulationState.pm.get<vec>("domain.max").y(), 
+        simulationState.pm.get<vec>("domain.min").x() - baseSupport, simulationState.pm.get<vec>("domain.max").x() + baseSupport, 
+        simulationState.pm.get<vec>("domain.min").y() - baseSupport, simulationState.pm.get<vec>("domain.max").y() + baseSupport, 
     0, 1);
 
     #define MAP_PROPERTY( x)\
@@ -242,6 +244,7 @@ void render(int32_t screenWidth, int32_t screenHeight) {
 
     MAP_PROPERTY(UID);
     MAP_PROPERTY(neighbors);
+    MAP_PROPERTY(ghostIndex);
 
 
   static std::string colorMap = "";
@@ -298,7 +301,7 @@ static int32_t image_height = 1024;
     // std::cout << "color_map_elements " << color_map_elements << std::endl;
     // texUnit = create1DTexture(color_map, color_map_elements);
   }
-
+if(simulationState.pm.get<bool>("render.showPtcls"))
     {
         // draws the particles in the simulation as points with a color value indicating velocity
         auto& particlePositions = simulationState.getPositions();
@@ -335,8 +338,6 @@ static int32_t image_height = 1024;
         }
         glEnd();
 
-    }
-    {
         glBegin(GL_POINTS);
         for (int32_t i = 0; i < simulationState.boundaryParticles.size(); ++i) {
             auto [p,n] = simulationState.boundaryParticles[i];
@@ -358,6 +359,84 @@ static int32_t image_height = 1024;
         glVertex2f(tri.v0.x(), tri.v0.y());
     }
     glEnd();
+
+    
+if(simulationState.pm.get<bool>("render.showGrid")){
+    auto cellsX = simulationState.pm.get<int32_t>("props.cellsX");
+    auto cellsY = simulationState.pm.get<int32_t>("props.cellsY");
+    auto domainMin = simulationState.pm.get<vec>("domain.min");
+    auto domainMax = simulationState.pm.get<vec>("domain.max");
+    auto baseSupport = simulationState.pm.get<scalar>("props.baseSupport");
+    auto domainWidth = cellsX * baseSupport;
+    auto domainHeight = cellsY * baseSupport;
+        glLineWidth(0.5f);
+        glColor4f(0.3f, 0.3f, 0.3f, 1);
+        glBegin(GL_LINES);
+        for (int32_t x = 1; x < (int32_t)cellsX; x += 1) {
+            for (int32_t y = 1; y < (int32_t)cellsY; y += 1) {
+                if ((y % 5 == 0)) {
+                    glLineWidth(1.f);
+                    glColor4f(0.5f, 0.5f, 0.5f, 1);
+                }
+                glVertex2f(domainMin.x() + 0.0, domainMin.y() + (float)y / (float)cellsY * (float)domainHeight);
+                glVertex2f(domainMin.x() + domainWidth, domainMin.y() + (float)y / (float)cellsY * (float)domainHeight);
+                if ((y % 5 == 0)) {
+                    glLineWidth(0.5f);
+                    glColor4f(0.3f, 0.3f, 0.3f, 1);
+                }
+            }
+            if ((x % 5 == 0)) {
+                glLineWidth(1.f);
+                glColor4f(0.5f, 0.5f, 0.5f, 1);
+            }
+            glVertex2f(domainMin.x() + (float)x / (float)cellsX * (float)domainWidth, domainMin.y() + 0.0);
+            glVertex2f(domainMin.x() + (float)x / (float)cellsX * (float)domainWidth, domainMin.y() + domainHeight);
+
+            if ((x % 5 == 0)) {
+                glLineWidth(0.5f);
+                glColor4f(0.3f, 0.3f, 0.3f, 1);
+            }
+        }
+        glEnd();
+    }{
+    auto domainMin = simulationState.pm.get<vec>("domain.min");
+    auto domainMax = simulationState.pm.get<vec>("domain.max");
+        glLineWidth(1.f);
+        glColor4f(1.f,0.f,0.f, 1);
+        glBegin(GL_LINES);
+            glVertex2f(domainMin.x(), domainMin.y());
+            glVertex2f(domainMax.x(), domainMin.y());
+
+            glVertex2f(domainMax.x(), domainMin.y());
+            glVertex2f(domainMax.x(), domainMax.y());
+            
+            glVertex2f(domainMax.x(), domainMax.y());
+            glVertex2f(domainMin.x(), domainMax.y());
+            
+            glVertex2f(domainMin.x(), domainMax.y());
+            glVertex2f(domainMin.x(), domainMin.y());
+        glEnd();
+    }
+    {
+        
+    auto domainMin = simulationState.pm.get<vec>("domain.virtualMin");
+    auto domainMax = simulationState.pm.get<vec>("domain.virtualMax");
+        glLineWidth(1.f);
+        glColor4f(0.f,1.f,0.f, 1);
+        glBegin(GL_LINES);
+            glVertex2f(domainMin.x(), domainMin.y());
+            glVertex2f(domainMax.x(), domainMin.y());
+
+            glVertex2f(domainMax.x(), domainMin.y());
+            glVertex2f(domainMax.x(), domainMax.y());
+            
+            glVertex2f(domainMax.x(), domainMax.y());
+            glVertex2f(domainMin.x(), domainMax.y());
+            
+            glVertex2f(domainMin.x(), domainMax.y());
+            glVertex2f(domainMin.x(), domainMin.y());
+        glEnd();
+    }
 }
 
 GLuint shader_programme;
@@ -390,8 +469,8 @@ void GUI::renderFunctions() {
     // ACTUAL RENDERING CALL
 
     auto time = simulationState.pm.get<scalar>("sim.time");
-    if (time > 30.0)
-        shouldStop = true;
+    // if (time > 30.0)
+        // shouldStop = true;
 
 
     glBindVertexArray(0);
