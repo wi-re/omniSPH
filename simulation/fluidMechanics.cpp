@@ -13,57 +13,59 @@ void SPHSimulation::density(){
             rho += fluidArea[j] * W(pi, fluidPosition[j], hi, fluidSupport[j]);
         }
         //pi.rho = std::max(pi.rho, 0.5);
-        boundaryFunc(i, [&rho](auto bpos, auto d, auto k, auto gk, auto triangle) {
+        boundaryFunc(i, [&rho](auto bpos, auto d, auto k, auto gk, auto triangle, auto triIdx) {
             rho += k; });
 
         fluidDensity[i] = rho;
     }
     syncGhost(fluidDensity);
 
-#pragma omp parallel for
-  for (int32_t i = 0; i < numPtcls; ++i) {
-    scalar color = 0.;
-    for (int32_t j : fluidNeighborList[i]) {
-        color += fluidArea[j] / fluidDensity[j] * 1. * W(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]);
-    }
-    fluidColorField[i] = color;
-  }
-  syncGhost(fluidColorField);
+// #pragma omp parallel for
+//   for (int32_t i = 0; i < numPtcls; ++i) {
+//     scalar color = 0.;
+//     for (int32_t j : fluidNeighborList[i]) {
+//         color += fluidArea[j] / fluidDensity[j] * 1. * W(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]);
+//     }
+//     fluidColorField[i] = color;
+//     fluidInitialVelocity[i] = fluidVelocity[i];
+//   }
+//   syncGhost(fluidColorField);
+//   syncGhost(fluidInitialVelocity);
 
 
-  for (int32_t i = 0; i < numPtcls; ++i) {
-    vec colorGradient = vec(0,0);
-    vec colorGradientSymmetric = vec(0,0);
-    vec colorGradientDifference = vec(0,0);
+//   for (int32_t i = 0; i < numPtcls; ++i) {
+//     vec colorGradient = vec(0,0);
+//     vec colorGradientSymmetric = vec(0,0);
+//     vec colorGradientDifference = vec(0,0);
 
-    vec predAccel = vec(0, 0);
+//     vec predAccel = vec(0, 0);
 
-    vec kernelSum((scalar)0.0, (scalar)0.0);
-    for (int32_t j : fluidNeighborList[i]) {
-      colorGradientSymmetric +=
-          -fluidArea[j] * fluidRestDensity[j] *
-          (fluidColorField[i] / power(fluidDensity[i] * fluidRestDensity[i], 2) +
-           fluidColorField[j] / power(fluidDensity[j] * fluidRestDensity[j], 2)) *
-          gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i],
-                fluidSupport[j]);
-      colorGradientDifference +=
-          -fluidArea[j] * fluidRestDensity[j] / (fluidDensity[j] * fluidRestDensity[j]) * (fluidColorField[j] - fluidColorField[i])*
-          gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i],
-                fluidSupport[j]) / (fluidDensity[i] * fluidRestDensity[i]);
-      colorGradient +=
-          -fluidArea[j] * fluidRestDensity[j] / (fluidDensity[j] * fluidRestDensity[j]) * (fluidColorField[j])*
-          gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i],
-                fluidSupport[j]) / (fluidDensity[i] * fluidRestDensity[i]);
-    }
+//     vec kernelSum((scalar)0.0, (scalar)0.0);
+//     for (int32_t j : fluidNeighborList[i]) {
+//       colorGradientSymmetric +=
+//           -fluidArea[j] * fluidRestDensity[j] *
+//           (fluidColorField[i] / power(fluidDensity[i] * fluidRestDensity[i], 2) +
+//            fluidColorField[j] / power(fluidDensity[j] * fluidRestDensity[j], 2)) *
+//           gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i],
+//                 fluidSupport[j]);
+//       colorGradientDifference +=
+//           -fluidArea[j] * fluidRestDensity[j] / (fluidDensity[j] * fluidRestDensity[j]) * (fluidColorField[j] - fluidColorField[i])*
+//           gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i],
+//                 fluidSupport[j]) / (fluidDensity[i] * fluidRestDensity[i]);
+//       colorGradient +=
+//           -fluidArea[j] * fluidRestDensity[j] / (fluidDensity[j] * fluidRestDensity[j]) * (fluidColorField[j])*
+//           gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i],
+//                 fluidSupport[j]) / (fluidDensity[i] * fluidRestDensity[i]);
+//     }
 
-    fluidColorFieldGradient[i] = colorGradient;
-    fluidColorFieldGradientDifference[i] = colorGradientDifference;
-    fluidColorFieldGradientSymmetric[i] = colorGradientSymmetric;
-  }
+//     fluidColorFieldGradient[i] = colorGradient;
+//     fluidColorFieldGradientDifference[i] = colorGradientDifference;
+//     fluidColorFieldGradientSymmetric[i] = colorGradientSymmetric;
+//   }
 
-  syncGhost(fluidColorFieldGradient);
-  syncGhost(fluidColorFieldGradientDifference);
-  syncGhost(fluidColorFieldGradientSymmetric);
+//   syncGhost(fluidColorFieldGradient);
+//   syncGhost(fluidColorFieldGradientDifference);
+//   syncGhost(fluidColorFieldGradientSymmetric);
 
 
 
@@ -95,7 +97,7 @@ void SPHSimulation::Integrate(){
 
             for (int32_t i = 0; i < numPtcls; ++i) {
                 auto pos = fluidPosition[i];
-                auto speed = source.emitterRampTime > 0. ? std::clamp(time / source.emitterRampTime, 0., 1.) * source.emitterVelocity.norm() : source.emitterVelocity.norm();
+                vec speed = source.emitterRampTime > 0. ? std::clamp(time / source.emitterRampTime, 0., 1.) * source.emitterVelocity : source.emitterVelocity;
 
                 if(source.shape == shape_t::rectangular)
                 if(pos.x() <= source.emitterMax.x() && pos.x() >= source.emitterMin.x() && pos.y() <= source.emitterMax.y() && pos.y() >= source.emitterMin.y()){
@@ -104,8 +106,10 @@ void SPHSimulation::Integrate(){
                     if(source.emitterMin.x() > .5)
                     xr = 1. - xr;
                     auto gamma = 1. - (std::exp(std::pow(xr,mu))-1.) / (std::exp(1) - 1.);
+                    // gamma = 1. - gamma;
 
-                    auto emitterVel = source.emitterVelocity;
+                    // auto emitterVel = source.emitterVelocity;
+                    auto emitterVel = speed; //source.emitterVelocity * std::min(time,1.);
                     fluidVelocity[i] += dt * fluidAccel[i];
                     fluidVelocity[i] = fluidVelocity[i] * ( 1. - gamma) + gamma * emitterVel;
                     // printf("%g -> %g : %g -> %g\n", pos.x(), xr, std::exp(std::pow(xr,mu)), gamma );
@@ -117,7 +121,7 @@ void SPHSimulation::Integrate(){
                 auto l = d.norm();
                 //std::cout << pos.x() << " " << pos.y() << " -> " << d.x() << " " << d.y() << " -> " << l << " / " << radius << " -> " <<(l>= radius) << std::endl;
                 if (l >= radius) continue;
-                    fluidVelocity[i] = source.emitterVelocity.normalized() * speed;
+                    fluidVelocity[i] = speed;//source.emitterVelocity.normalized() * speed;
                     fluidAngularVelocity[i] = 0.;
                     fluidAccel[i] = vec(0.,0.);
                 }
@@ -157,9 +161,21 @@ void SPHSimulation::Integrate(){
             }
 
         }
+ 
 
 
+    //     auto& shiftEps = pm.get<scalar>("props.shiftingEpsilon");
+    // for (int32_t i = 0; i < numPtcls; ++i) {
+    //     auto& pi = fluidPosition[i];
+    //     auto& hi = fluidSupport[i];
+    //     vec shift(0., 0.);
+    //     for (int32_t j : fluidNeighborList[i]) {
+    //         shift += fluidArea[j] / fluidDensity[j] * gradW(pi, fluidPosition[j], hi, fluidSupport[j]);
+    //     }
+    //     shift = -shiftEps * fluidSupport[i] * fluidSupport[i] * shift;
+    //     fluidVelocity[i] += shift / dt;
 
+    // }
     syncGhost(fluidVelocity);
     syncGhost(fluidAccel);
         auto& damping = pm.get<scalar>("props.damping");
@@ -170,6 +186,8 @@ void SPHSimulation::Integrate(){
         auto& ai = fluidAccel[i];
         vi += dt * ai;
         vi *= (1.0 - damping);
+        
+
         pi += dt * vi;
     }
     syncGhost(fluidVelocity);
@@ -233,7 +251,7 @@ void SPHSimulation::computeAlpha(bool density){
         vec kernelSum1(0, 0);
         scalar kernelSum2 = 0.0;
         if (density)
-            boundaryFunc(i, [&kernelSum1, &kernelSum2](auto bpos, auto d, auto k, auto gk, auto triangle) { kernelSum1 += gk; });
+            boundaryFunc(i, [&kernelSum1, &kernelSum2](auto bpos, auto d, auto k, auto gk, auto triangle, auto triIdx) { kernelSum1 += gk; });
         for (int32_t j : fluidNeighborList[i]) {
             vec kernel = gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]);
             kernelSum1 += fluidActualArea[j] * kernel;
@@ -251,7 +269,7 @@ void SPHSimulation::computeSourceTerm(bool density){
     for (int32_t i = 0; i < numPtcls; ++i) {
         scalar sourceTerm = density ? scalar(1.0) - fluidDensity[i] : scalar(0.0);
         if (density)
-            boundaryFunc(i, [this,i, dt, &sourceTerm](auto bpos, auto d, auto k, auto gk, auto triangle) {
+            boundaryFunc(i, [this,i, dt, &sourceTerm](auto bpos, auto d, auto k, auto gk, auto triangle, auto triIdx) {
             sourceTerm = sourceTerm - dt * fluidPredVelocity[i].dot(gk);
                 });
         for (int32_t j : fluidNeighborList[i]) {
@@ -288,16 +306,16 @@ void SPHSimulation::updatePressure(bool density ){
         scalar kernelSum = (scalar)0.0;
         if (density)
             boundaryFunc(i,
-                [this,dt, i, &kernelSum](auto bpos, auto d, auto k, auto gk, auto triangle) { kernelSum += dt * dt * fluidPredAccel[i].dot(gk); });
+                [this,dt, i, &kernelSum](auto bpos, auto d, auto k, auto gk, auto triangle, auto triIdx) { kernelSum += dt * dt * fluidPredAccel[i].dot(gk); });
         for (int32_t j : fluidNeighborList[i]) {
             kernelSum += dt * dt * fluidActualArea[j] * (fluidPredAccel[i] - fluidPredAccel[j]).dot(gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i], fluidSupport[j]));
         }
         scalar omega = (scalar)0.5;
         scalar pressure = fluidPressure1[i] + omega / fluidAlpha[i] * (fluidSourceTerm[i] - kernelSum);
         //if(di.pressureBoundary == 0.0)
-        if (backgroundPressureSwitch && density)
-            pressure += 100. * vMaxr * fluidRestDensity[i];
         pressure = density ? std::max(pressure, (scalar)0.0) : pressure;
+        if (backgroundPressureSwitch && density)
+            pressure = std::max(pressure, 1. * fluidRestDensity[i]);
         scalar residual = kernelSum - fluidSourceTerm[i];
         if (::abs(fluidAlpha[i]) < 1e-25 || pressure != pressure || pressure > 1e25)
             pressure = residual = 0.0;
@@ -355,8 +373,8 @@ scalar SPHSimulation::calculateBoundaryPressureMLS(int32_t i, vec pb, bool densi
         }
     }
     auto [U, S, V] = svd2x2(M);
-    S(0, 0) = abs(S(0, 0)) > (scalar)1e-2f ? (scalar)1.0 / S(0, 0) : (scalar)0.0;
-    S(1, 1) = abs(S(1, 1)) > (scalar)1e-2f ? (scalar)1.0 / S(1, 1) : (scalar)0.0;
+    S(0, 0) = abs(S(0, 0)) > (scalar)1e-4f ? (scalar)1.0 / S(0, 0) : (scalar)0.0;
+    S(1, 1) = abs(S(1, 1)) > (scalar)1e-4f ? (scalar)1.0 / S(1, 1) : (scalar)0.0;
     S(0, 1) = S(1, 0) = (scalar)0.0;
     matrix Mp = V * S * U.transpose();
     scalar alpha = sumA / sumB;
@@ -382,7 +400,7 @@ void SPHSimulation::computeBoundaryTrianglePressure(bool density) {
     if (!baryPressure) return;
 #pragma omp parallel for
     for (int32_t i = 0; i < boundaryTriangles.size(); ++i) {
-        const auto [t0, t1, t2] = boundaryTriangles[i];
+        const auto [t0, t1, t2, t] = boundaryTriangles[i];
         auto f0 = calculateBoundaryPressureMLS(-1, t0, true);
         auto f1 = calculateBoundaryPressureMLS(-1, t1, true);
         auto f2 = calculateBoundaryPressureMLS(-1, t2, true);
@@ -424,6 +442,10 @@ void SPHSimulation::computeBoundaryPressure(bool density ){
                     //    std::cout << k2 << " @ [ " << gk2.x() << " " << gk2.y() << "] \n";
                     //}
                     fluidPredAccel[i] += -scalar(1.0) * gk;
+                    auto& x = *boundaryPressureForceX[boundaryTriangles[ti].body];
+                    auto& y = *boundaryPressureForceY[boundaryTriangles[ti].body];
+                    x += gk.x() / (fluidArea[i] * fluidRestDensity[i]);
+                    y += gk.y() / (fluidArea[i] * fluidRestDensity[i]);
                 }
                 //if (f0 > 1e12 || f1 > 1e12 || f2 > 1e12) {
                 //    std::cout << std::defaultfloat;
@@ -437,14 +459,19 @@ void SPHSimulation::computeBoundaryPressure(bool density ){
             }
         }
         else {
-            boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle) {
+            boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle, auto triIdx) {
                 scalar pressure = calculateBoundaryPressureMLS(i, pb, density);
                 scalar fluidPressure = density ? std::max((scalar)0.0, fluidPressure2[i]) : fluidPressure2[i];
                 scalar boundaryPressure = density ? std::max((scalar)0.0, pressure) : pressure;
                 // boundaryPressure = fluidPressure;
                 fluidBoundaryPressure[i] += boundaryPressure;
-                fluidPredAccel[i] +=
-                    -scalar(1.0) * fluidRestDensity[i] * (fluidPressure / power(fluidDensity[i] * fluidRestDensity[i], 2) + boundaryPressure / (fluidRestDensity[i] * fluidRestDensity[i])) * gk;
+                auto accel = -scalar(1.) * fluidRestDensity[i] * (fluidPressure / power(fluidDensity[i] * fluidRestDensity[i], 2) + boundaryPressure / (fluidRestDensity[i] * fluidRestDensity[i])) * gk;
+                fluidPredAccel[i] += accel
+                    ;
+                    auto& x = *boundaryPressureForceX[boundaryTriangles[triIdx].body];
+                    auto& y = *boundaryPressureForceY[boundaryTriangles[triIdx].body];
+                    x += -accel.x() * (fluidArea[i] * fluidRestDensity[i]);
+                    y += -accel.y() * (fluidArea[i] * fluidRestDensity[i]);
                 });
         }
     }
@@ -473,6 +500,8 @@ void SPHSimulation::updateVelocity(bool density ){
     }
     syncGhost(fluidAccel);
     syncGhost(fluidPredVelocity);
+    syncGhost(fluidAdvectionVelocity);
+    syncGhost(fluidInitialVelocity);
 }
 int32_t SPHSimulation::divergenceSolve() {
     auto& numPtcls = pm.get<int32_t>("props.numPtcls");
@@ -513,7 +542,7 @@ int32_t SPHSimulation::densitySolve(){
     //scalar error = (scalar)0.0;
     //int32_t counter = 0;
     for (int32_t i = 0; i < numPtcls; ++i){
-       fluidPressure1[i] = fluidPressure2[i] = 0.5 * fluidPressure1[i];
+       fluidPressure1[i] = fluidPressure2[i] = 0.5 * fluidPriorPressure[i];
     }
     auto& limit = pm.get<scalar>("dfsph.densityEta");
     auto& error = pm.get<scalar>("dfsph.densityError");
@@ -530,6 +559,12 @@ int32_t SPHSimulation::densitySolve(){
         error /= numPtcls;
         // std::cout << "Density: " << counter << " -> " << error << std::endl;
     } while (counter++ < 3 || (error > (scalar)limit && counter < 256));
+for(int32_t i = 0; i < boundaryPressureForceX.size(); ++ i){
+  *boundaryPressureForceX[i] = 0.;
+  *boundaryPressureForceY[i] = 0.;
+  *boundaryDragForceX[i] = 0.;
+  *boundaryDragForceY[i] = 0.;
+}
     computeBoundaryPressure(true);
     computeAcceleration(true);
     updateVelocity();
@@ -593,6 +628,7 @@ void SPHSimulation::refineVorticity() {
     auto& dt = pm.get<scalar>("sim.dt");
 #pragma omp parallel for
     for (int32_t i = 0; i < numPtcls; ++i) {
+        fluidInitialAngularVelocity[i] = fluidAngularVelocity[i];
         fluidAngularVelocity[i] += dwdt[i] * dt;
         fluidVelocity[i] += dvdt[i] * dt;
     }
@@ -615,6 +651,7 @@ void SPHSimulation::refineVorticity() {
     for (int32_t i = 0; i < numPtcls; ++i) {
         fluidAngularVelocity[i] += dwdt[i];
     }
+    syncGhost(fluidInitialAngularVelocity);
     syncGhost(fluidAngularVelocity);
 }
 void SPHSimulation::externalForces() {
@@ -642,18 +679,40 @@ void SPHSimulation::BXSPH() {
 
     auto& viscosityConstant = pm.get<scalar>("ptcl.viscosityConstant");
     auto& boundaryViscosity = pm.get<scalar>("ptcl.boundaryViscosity");
+    auto& dt = pm.get<scalar>("sim.dt");
     std::vector<vec> tempV;
 
     auto mu = boundaryViscosity;
 #pragma omp parallel for
     for (int32_t i = 0; i < numPtcls; ++i) {
         if (fluidTriangleNeighborList[i].size() == 0) continue;
+        int32_t b = -1;
         auto f_visco = vec(0, 0);
         auto grad = vec(0, 0);
         auto ksum = 0.;
         auto vsum = vec(0, 0);
         for (auto ti : fluidTriangleNeighborList[i]) {
+            
             const auto& t = boundaryTriangles[ti];
+            if(b != t.body){
+                if(b != -1){
+                    grad = -grad.normalized();
+
+                    auto v = fluidVelocity[i];
+                    auto proj = v.dot(grad) * grad;
+                    auto orth = v - proj;
+                    auto visco = std::min(mu * ksum, 1.0) * orth;
+                    f_visco -= visco;
+                    auto force = visco / dt / (fluidArea[i] * fluidRestDensity[i]);
+                    *boundaryDragForceX[t.body] += force.x();
+                    *boundaryDragForceY[t.body] += force.y();
+                }
+                f_visco = vec(0, 0);
+                grad = vec(0,0);
+                ksum = 0.;
+                vsum = vec(0,0);
+                b = t.body;
+            }
             auto [hit, pb2, d2, k, gk] = interactTriangle(fluidPosition[i], fluidSupport[i], t);
             if (hit) {
                 grad += gk;
@@ -666,8 +725,13 @@ void SPHSimulation::BXSPH() {
         auto v = fluidVelocity[i];
         auto proj = v.dot(grad) * grad;
         auto orth = v - proj;
-        f_visco -= std::min(mu * ksum, 1.0) * orth;
-
+        auto visco = std::min(mu * ksum, 1.0) * orth;
+        f_visco -= visco;
+        auto force = visco / dt * (fluidArea[i] * fluidRestDensity[i]);
+        if(b != -1){
+            *boundaryDragForceX[b] += force.x();
+            *boundaryDragForceY[b] += force.y();
+        }
         //f_visco += mu * orth;
 
 
@@ -712,6 +776,7 @@ void SPHSimulation::gaseousSPH(){
     auto& numPtcls = pm.get<int32_t>("props.numPtcls");
     auto& kappa = pm.get<scalar>("sim.kappa");
     auto& dt = pm.get<scalar>("sim.dt");
+    #pragma omp parallel for
     for (int32_t i = 0; i < numPtcls; ++i) {
         fluidPressure1[i] = (fluidDensity[i] - 1.) * kappa * fluidRestDensity[i];
         fluidPressure1[i] = std::max(0., fluidPressure1[i]);
@@ -720,6 +785,7 @@ void SPHSimulation::gaseousSPH(){
     syncGhost(fluidPressure1);
     syncGhost(fluidPressure2);
 
+    #pragma omp parallel for
     for (int32_t i = 0; i < numPtcls; ++i) {
         fluidPredAccel[i] = vec(0,0);
 
@@ -730,18 +796,24 @@ void SPHSimulation::gaseousSPH(){
         }
         fluidPredAccel[i] += kernelSum;
         bool density = true;
-            boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle) {
+            boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle, auto triIdx) {
                 scalar pressure = calculateBoundaryPressureMLS(i, pb, density);
                 scalar fluidPressure = density ? std::max((scalar)0.0, fluidPressure2[i]) : fluidPressure2[i];
                 scalar boundaryPressure = density ? std::max((scalar)0.0, pressure) : pressure;
                 // boundaryPressure = fluidPressure;
                 fluidBoundaryPressure[i] += boundaryPressure;
-                fluidPredAccel[i] +=
-                    -scalar(1.0) * fluidRestDensity[i] * (fluidPressure / power(fluidDensity[i] * fluidRestDensity[i], 2) + boundaryPressure / (fluidRestDensity[i] * fluidRestDensity[i])) * gk;
+                vec accel = -scalar(1.0) * fluidRestDensity[i] * (fluidPressure / power(fluidDensity[i] * fluidRestDensity[i], 2) + boundaryPressure / (fluidRestDensity[i] * fluidRestDensity[i])) * gk;
+                fluidPredAccel[i] += accel;
+                // std::cout << "Adding pressure to " << boundaryTriangles[triIdx].body << " / " << boundaryPressureForceX.size() << std::endl;
+                auto& x = *boundaryPressureForceX[boundaryTriangles[triIdx].body];
+                auto& y = *boundaryPressureForceY[boundaryTriangles[triIdx].body];
+                x -= accel.x() * (fluidArea[i] * fluidRestDensity[i]);
+                y -= accel.y() * (fluidArea[i] * fluidRestDensity[i]);
                 });
     }
     syncGhost(fluidBoundaryPressure);
     syncGhost(fluidPredAccel);
+    #pragma omp parallel for
     for (int32_t i = 0; i < numPtcls; ++i) {
         fluidAdvectionVelocity[i] = fluidVelocity[i];
         fluidVelocity[i] += (fluidPredAccel[i]) * dt;
@@ -770,7 +842,7 @@ void SPHSimulation::evalPressureForce() {
     }
     predAccel += kernelSum;
     bool density = true;
-    boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle) {
+    boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle, auto triIdx) {
       scalar pressure = calculateBoundaryPressureMLS(i, pb, density);
       scalar fluidPressure = density ? std::max((scalar)0.0, fluidPressure2[i])
                                      : fluidPressure2[i];
@@ -785,60 +857,60 @@ void SPHSimulation::evalPressureForce() {
     fluidPressureAccel[i] = predAccel;
     fluidPressureVelocity[i] = fluidVelocity[i];
   }
-  // difference pressure accel
-  for (int32_t i = 0; i < numPtcls; ++i) {
-    vec predAccel = vec(0, 0);
+//   // difference pressure accel
+//   for (int32_t i = 0; i < numPtcls; ++i) {
+//     vec predAccel = vec(0, 0);
 
-    vec kernelSum((scalar)0.0, (scalar)0.0);
-    for (int32_t j : fluidNeighborList[i]) {
-      kernelSum +=
-          -fluidArea[j] * rhoj / (fluidDensity[j] * rhoj) * (fluidPressure2[j] - fluidPressure2[i])*
-          gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i],
-                fluidSupport[j]);
-    }
-    predAccel += kernelSum;
-    bool density = true;
-    boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle) {
-      scalar pressure = calculateBoundaryPressureMLS(i, pb, density);
-      scalar fluidPressure = density ? std::max((scalar)0.0, fluidPressure2[i])
-                                     : fluidPressure2[i];
-      scalar boundaryPressure =
-          density ? std::max((scalar)0.0, pressure) : pressure;
-      predAccel +=
-          -scalar(1.0) *
-          (boundaryPressure - fluidPressure) *
-          gk;
-    });
-    fluidPressureAccelDifference[i] = predAccel / (fluidDensity[i] * fluidRestDensity[i]);
-  }
-  // simple pressure accel
-  for (int32_t i = 0; i < numPtcls; ++i) {
-    vec predAccel = vec(0, 0);
+//     vec kernelSum((scalar)0.0, (scalar)0.0);
+//     for (int32_t j : fluidNeighborList[i]) {
+//       kernelSum +=
+//           -fluidArea[j] * rhoj / (fluidDensity[j] * rhoj) * (fluidPressure2[j] - fluidPressure2[i])*
+//           gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i],
+//                 fluidSupport[j]);
+//     }
+//     predAccel += kernelSum;
+//     bool density = true;
+//     boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle, auto triIdx) {
+//       scalar pressure = calculateBoundaryPressureMLS(i, pb, density);
+//       scalar fluidPressure = density ? std::max((scalar)0.0, fluidPressure2[i])
+//                                      : fluidPressure2[i];
+//       scalar boundaryPressure =
+//           density ? std::max((scalar)0.0, pressure) : pressure;
+//       predAccel +=
+//           -scalar(1.0) *
+//           (boundaryPressure - fluidPressure) *
+//           gk;
+//     });
+//     fluidPressureAccelDifference[i] = predAccel / (fluidDensity[i] * fluidRestDensity[i]);
+//   }
+//   // simple pressure accel
+//   for (int32_t i = 0; i < numPtcls; ++i) {
+//     vec predAccel = vec(0, 0);
 
-    vec kernelSum((scalar)0.0, (scalar)0.0);
-    for (int32_t j : fluidNeighborList[i]) {
-      kernelSum +=
-          -fluidArea[j] * rhoj / (fluidDensity[j] * rhoj) * (fluidPressure2[j])*
-          gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i],
-                fluidSupport[j]);
-    }
-    predAccel += kernelSum;
-    bool density = true;
-    boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle) {
-      scalar pressure = calculateBoundaryPressureMLS(i, pb, density);
-      scalar fluidPressure = density ? std::max((scalar)0.0, fluidPressure2[i])
-                                     : fluidPressure2[i];
-      scalar boundaryPressure =
-          density ? std::max((scalar)0.0, pressure) : pressure;
-      predAccel +=
-          -scalar(1.0) *
-          (boundaryPressure) *
-          gk;
-    });
-    fluidPressureAccelSimple[i] = predAccel / (fluidDensity[i] * fluidRestDensity[i]);
-  }
+//     vec kernelSum((scalar)0.0, (scalar)0.0);
+//     for (int32_t j : fluidNeighborList[i]) {
+//       kernelSum +=
+//           -fluidArea[j] * rhoj / (fluidDensity[j] * rhoj) * (fluidPressure2[j])*
+//           gradW(fluidPosition[i], fluidPosition[j], fluidSupport[i],
+//                 fluidSupport[j]);
+//     }
+//     predAccel += kernelSum;
+//     bool density = true;
+//     boundaryFunc(i, [&, this](auto pb, auto d, auto k, auto gk, auto triangle, auto triIdx) {
+//       scalar pressure = calculateBoundaryPressureMLS(i, pb, density);
+//       scalar fluidPressure = density ? std::max((scalar)0.0, fluidPressure2[i])
+//                                      : fluidPressure2[i];
+//       scalar boundaryPressure =
+//           density ? std::max((scalar)0.0, pressure) : pressure;
+//       predAccel +=
+//           -scalar(1.0) *
+//           (boundaryPressure) *
+//           gk;
+//     });
+//     fluidPressureAccelSimple[i] = predAccel / (fluidDensity[i] * fluidRestDensity[i]);
+//   }
 
   syncGhost(fluidPressureAccel);
-  syncGhost(fluidPressureAccelDifference);
-  syncGhost(fluidPressureAccelSimple);
+//   syncGhost(fluidPressureAccelDifference);
+//   syncGhost(fluidPressureAccelSimple);
 }

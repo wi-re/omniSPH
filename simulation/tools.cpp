@@ -258,30 +258,32 @@ if(lastExport == 0) lastExport = -interval;
         outFile.write(reinterpret_cast<char*>(data.data()), sizeof(T) * numPtcls);
         outFile.close();
     };
-    writeData(fluidInitialPosition, "initialPosition");
-    writeData(fluidPosition, "position");
-    writeData(fluidVelocity, "velocity");
+    writeData(fluidInitialPosition, "position");
+    writeData(fluidPosition, "finalPosition");
+    writeData(fluidInitialVelocity, "velocity");
+    writeData(fluidVelocity, "finalVelocity");
     // writeData(fluidAccel, "accel");
     writeData(fluidPressure1, "pressure");
     writeData(fluidDensity, "density");
     // writeData(fluidVorticity, "vorticity");
-    writeData(fluidAngularVelocity, "angularVelocity");
+    writeData(fluidAngularVelocity, "finalAngularVelocity");
+    writeData(fluidInitialAngularVelocity, "angularVelocity");
     writeData(fluidArea, "area");
-    writeData(fluidRestDensity, "restDensity");
-    writeData(fluidSupport, "support");
+    // writeData(fluidRestDensity, "restDensity");
+    // writeData(fluidSupport, "support");
     writeData(fluidUID, "uid");
 
     writeData(fluidGhostIndex, "ghostIndex");
-    writeData(fluidAdvectionVelocity, "advectionVelocity");
-    writeData(fluidPressureAccel, "pressureAccelSymmetric");    
-    writeData(fluidPressureAccelSimple, "pressureAccel");  
-    writeData(fluidPressureAccelDifference, "pressureAccelDifference");  
-    writeData(fluidPressureVelocity, "pressureVelocity");
+    // writeData(fluidAdvectionVelocity, "advectionVelocity");
+    // writeData(fluidPressureAccel, "pressureAccelSymmetric");    
+    // writeData(fluidPressureAccelSimple, "pressureAccel");  
+    // writeData(fluidPressureAccelDifference, "pressureAccelDifference");  
+    // writeData(fluidPressureVelocity, "pressureVelocity");
 
     writeData(fluidColorField, "colorField");    
     writeData(fluidColorFieldGradient, "colorFieldGradient");  
-    writeData(fluidColorFieldGradientDifference, "colorFieldGradientDifference");  
-    writeData(fluidColorFieldGradientSymmetric, "colorFieldGradientSymmetric");
+    // writeData(fluidColorFieldGradientDifference, "colorFieldGradientDifference");  
+    // writeData(fluidColorFieldGradientSymmetric, "colorFieldGradientSymmetric");
 
 
    summaryFile.write(reinterpret_cast<char*>(&data), sizeof(simulationData));
@@ -322,11 +324,18 @@ void SPHSimulation::resetFrame(){
     fluidPressureAccelSimple[i]=vec(0,0);
     fluidPressureVelocity[i]=vec(0,0);
     fluidAdvectionVelocity[i]=vec(0,0);
+    fluidInitialVelocity[i]=vec(0,0);
 
 }
 ghostParticles.clear();
 for(int32_t c = 0; c < cellsX * cellsY; ++c){
     cellArray[c] = std::vector<int32_t>{};
+}
+for(int32_t i = 0; i < boundaryPressureForceX.size(); ++ i){
+  *boundaryPressureForceX[i] = 0.;
+  *boundaryPressureForceY[i] = 0.;
+  *boundaryDragForceX[i] = 0.;
+  *boundaryDragForceY[i] = 0.;
 }
 auto virtualMin = pm.get<vec>("domain.virtualMin");
 auto virtualMax = pm.get<vec>("domain.virtualMax");
@@ -398,7 +407,7 @@ auto virtualMax = pm.get<vec>("domain.virtualMax");
                 fluidPriorPressure[i] = fluidPriorPressure[srcIdx];
                 fluidArea[i] = fluidArea[srcIdx];
                 fluidRestDensity[i] = fluidRestDensity[srcIdx];
-                fluidUID[i]=fluidCounter++;
+                fluidUID[i]=fluidUID[srcIdx];
               fluidInitialPosition[i] = fluidPosition[srcIdx];
                 fluidSupport[i] = fluidSupport[srcIdx];
             }

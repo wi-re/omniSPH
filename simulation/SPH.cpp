@@ -10,7 +10,7 @@
 #include <chrono>
 #include <sstream>
 #include <atomic>
-
+#include <fstream>
 
 #include <time.h>
 #include <iomanip>
@@ -31,7 +31,7 @@ void SPHSimulation::timestep(){
         TIME_CODE(2, "Simulation - Cell construction", fillCells());
         TIME_CODE(3, "Simulation - Neighbor search", neighborList());
         TIME_CODE(4, "Simulation - Density", density());
-        TIME_CODE(5, "Simulation - Vorticity", computeVorticity());
+        // TIME_CODE(5, "Simulation - Vorticity", computeVorticity());
         TIME_CODE(6, "Simulation - External", externalForces());
         // if(!useEOS){
         if(pm.get<bool>("sim.incompressible")){
@@ -46,12 +46,23 @@ void SPHSimulation::timestep(){
         //     TIME_CODE(7, "Simulation - EOS Pressure", stateSPH());
         // }
          TIME_CODE(9, "Simulation - XSPH", XSPH());
-        TIME_CODE(10, "Simulation - Vorticity", refineVorticity());
+        // TIME_CODE(10, "Simulation - Vorticity", refineVorticity());
         TIME_CODE(11, "Simulation - Integration", Integrate());
-        //TIME_CODE(12, "Simulation - BXSPH", BXSPH());
+        TIME_CODE(12, "Simulation - BXSPH", BXSPH());
         TIME_CODE(13, "Simulation - Dump", dump());
         TIME_CODE(14, "Simulation - Emission", emitParticles());
     );
+
+        auto& t = pm.get<scalar>("sim.time");
+        auto& f = pm.get<int32_t>("sim.frame");
+    static std::ofstream bfile("log.txt");
+    bfile << f << " " << t << " ";
+
+        // printf("%04d %g ", f, t);
+    for(int32_t b = 0; b < boundaryPressureForceX.size(); ++b){
+        bfile << boundaryPressureForceX[b]->load() << " " << boundaryPressureForceY[b]->load() << " " << boundaryDragForceX[b]->load() << " " << boundaryDragForceY[b]->load() << " ";
+    }
+    bfile << std::endl;
 }
 
 void SPHSimulation::fillCells(){    
@@ -89,11 +100,11 @@ void SPHSimulation::neighborList(){
 
     
     auto triangleArea = [](Triangle t) {
-        auto [p0, p1, p2] = t;
+        auto [p0, p1, p2,i] = t;
         return 0.5 * (-p1[1] * p2[0] + p0[1] * (-p1[0] + p2[0]) + p0[0] * (p1[1] - p2[1]) + p1[0] * p2[1]) + epsilon;
     };
     auto pointInTriangle = [triangleArea](vec p, Triangle tri) {
-        auto [p0, p1, p2] = tri;
+        auto [p0, p1, p2,i] = tri;
         auto area = triangleArea(tri);
         auto s = 1.0 / (2.0 * area) * (p0[1] * p2[0] - p0[0] * p2[1] + (p2[1] - p0[1]) * p[0] + (p0[0] - p2[0]) * p[1]);
         auto t = 1.0 / (2.0 * area) * (p0[0] * p1[1] - p0[1] * p1[0] + (p0[1] - p1[1]) * p[0] + (p1[0] - p0[0]) * p[1]);
@@ -184,6 +195,9 @@ void SPHSimulation::neighborList(){
                     fluidTriangleNeighborList[i].push_back(ti);
                 }
             }
+            std::sort(fluidTriangleNeighborList[i].begin(), fluidTriangleNeighborList[i].end(),[this](const auto& lhs, const auto& rhs){
+                return boundaryTriangles[lhs].body < boundaryTriangles[rhs].body;
+            });
     }
 
 
@@ -238,6 +252,10 @@ std::tuple<scalar, scalar, std::vector<scalar>> SPHSimulation::colorMap(property
                 case property_t::UID:               s = fluidUID[i]; break;
                 case property_t::neighbors:         s = fluidNeighborList[i].size(); break;
                 case property_t::ghostIndex: s =fluidGhostIndex[i];break;
+                case property_t::color: s =fluidColorField[i];break;
+                case property_t::colorGrad: s = mapVec(fluidColorFieldGradient[i]);break;
+                case property_t::colorGradDiff: s =mapVec(fluidColorFieldGradientDifference[i]);break;
+                case property_t::colorGradSymm: s = mapVec(fluidColorFieldGradientSymmetric[i]);break;
             }
             min = std::min(s, min);
             max = std::max(s, max);
@@ -271,6 +289,10 @@ std::tuple<scalar, scalar, std::vector<scalar>> SPHSimulation::colorMap(property
                 case property_t::UID:               s = fluidUID[i]; break;
                 case property_t::neighbors:         s = fluidNeighborList[i].size(); break;
                 case property_t::ghostIndex: s =fluidGhostIndex[i];break;
+                case property_t::color: s =fluidColorField[i];break;
+                case property_t::colorGrad: s = mapVec(fluidColorFieldGradient[i]);break;
+                case property_t::colorGradDiff: s =mapVec(fluidColorFieldGradientDifference[i]);break;
+                case property_t::colorGradSymm: s = mapVec(fluidColorFieldGradientSymmetric[i]);break;
             }
             mappedData[i] = (s - min) / (max - min);
             if(max == min)

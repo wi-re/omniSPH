@@ -94,7 +94,7 @@ std::vector<vec> fluidSource::genParticles() const{
     scalar area = double_pi * emitterRadius * emitterRadius;
     scalar support = std::sqrt(area * targetNeighbors / double_pi);
     scalar packing = packing_2D * support / compressionRatio;
-    printf("Compression: %g | %g | %g\n", compressionRatio, packing, packing_2D * support);
+    printf("Compression: %g | %.15g | %g\n", compressionRatio, packing, packing_2D * support);
     printf("radius: %g, area: %g, support: %g, packing: %g\n", emitterRadius, area, support, packing);
     vec center = (emitterMin + emitterMax) / 2.;
     vec pdiff = (emitterMax - emitterMin) / 2.;
@@ -121,7 +121,7 @@ std::vector<vec> fluidSource::genParticles() const{
                 //std::cout << pos.x() << " " << pos.y() << " -> " << d.x() << " " << d.y() << " -> " << l << " / " << radius << " -> " <<(l>= radius) << std::endl;
                 if (l >= radius) continue;
                 }
-      if (pos.x() <= emitterMax.x() && pos.y() <= emitterMax.y())
+    //   if (pos.x() <= emitterMax.x() && pos.y() <= emitterMax.y())
         points.emplace_back(pos.x(), pos.y());
     }
   return points;

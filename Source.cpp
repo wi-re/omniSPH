@@ -180,10 +180,103 @@ if(argc > 1){
     simulationState = SPHSimulation(buffer.str());
 }
 else{
+auto fpc = R"(triangles:
+    - v0: [ 0. ,  0. ]
+      v1: [ -0.5 ,  0.25 ]
+      v2: [ -0.5 ,  -0.25 ]
+      body: 0
+t2:
+    - v0: [ 1. ,  -0.5 ]
+      v1: [ 1.5 ,  -0.75 ]
+      v2: [ 1.5 ,  -0.25 ]
+      body: 1
+    - v0: [ 1. ,  0.5 ]
+      v1: [ 1.5 ,  0.75 ]
+      v2: [ 1.5 ,  0.25 ]
+      body: 2
+fluids:
+     - min: [-2, -1.]
+       max: [4., 1.]
+       radius: 0.01
+       type: once
+       velocity: [1.,0.]
+       compression: 1.60011
+       velocityNoise: false
+       areaNoise: false
+       noiseAmplitude: 2.0
+       noiseOctaves: 1
+       noiseFrequency: 1.0
+       noiseSeed: 0
+       density: 1000
+     - min: [-2, -1.]
+       max: [-1.9, 1.]
+       radius: 0.01
+       type: source
+       velocity: [1.,0]
+     - min: [3.9, -1.]
+       max: [4.0, 1.]
+       radius: 0.01
+       type: source
+       velocity: [1.,0]
+  
+
+       
 
 
+gravity:
+    - pointSource: true
+      location: [.0, .0]
+      magnitude: 0.0
 
-    simulationState = SPHSimulation(R"(
+triangless:
+    - v0: [-1.5, 0.25]
+      v1: [-1.0, 0.125]
+      v2: [-1.0, 0.375]
+
+video:
+  active: false
+  fps: 100.0
+
+props:
+    maxnumptcls: 512000
+    backgroundPressure: true
+
+dfsph:
+  divergenceSolve: false
+  densityEta: 0.001
+
+domain:
+    min: [-1, -1]
+    max: [1, 1]
+    epsilon: 0.02
+    periodicX: true
+    periodicY: true
+
+sim:
+    maxDt: 0.0025
+    minDt: 0.0025
+    incompressible: false
+    kappa: 1.5
+
+ptcl:
+    boundaryViscosity: 0.5
+    viscosityConstant: 0.01
+vorticity:
+    nu_t: 0.05
+    angularViscositys: 0.01
+
+export:
+    active: false
+    limit: 4.0
+    interval: 1
+
+colorMap:
+  buffer: 'velocity'
+  auto: true
+  min: 0.
+  max: 10.)";
+
+auto noiseSimulation = R"(
 fluids:
      - min: [-1, -1.]
        max: [1., 1.]
@@ -194,7 +287,7 @@ fluids:
        velocityNoise: true
        areaNoise: false
        noiseAmplitude: 1.0
-       noiseOctaves: 4
+       noiseOctaves: 8
        noiseFrequency: 2.0
        noiseSeed: 1337
        density: 1000
@@ -250,7 +343,7 @@ vorticity:
 
 export:
     active: true
-    limit: 4.0
+    limit: 2.5
     interval: 1
 
 colorMap:
@@ -258,7 +351,8 @@ colorMap:
   auto: true
   min: 0.
   max: 10.
-)");
+)";
+    simulationState = SPHSimulation(fpc);
 }
     auto& gui = GUI::instance();
     gui.render_lock.lock();

@@ -73,7 +73,12 @@ void SPHSimulation::initializeParameters(){
 
         std::string("UID"),
         std::string("neighbors"),
-        std::string("ghostIndex")
+        std::string("ghostIndex"),
+        
+        std::string("color"),
+        std::string("colorGrad"),
+        std::string("colorGradSymm"),
+        std::string("colorGradDiff")
     };
 
     static auto cMapPresets = std::vector<std::string>{[this]() {
@@ -121,10 +126,18 @@ void SPHSimulation::initializeParameters(){
     pm.newParameter("props.maxnumptcls", 1024*128, { .constant = true });
     //pm.newParameter("props.scale", simulationState.baseSupport, { .constant = true });
     pm.newParameter("ptcl.render", true, { .constant = false });
+    pm.newParameter("props.shiftingEpsilon", -0.05, { .constant = false, .range = genRange(0.0,1.0) });
     pm.newParameter("props.baseRadius", 0., { .constant = true });
     pm.newParameter("props.baseSupport", 0., { .constant = true });
     pm.newParameter("props.cellsX", 0, { .constant = true });
     pm.newParameter("props.cellsY", 0, { .constant = true });
+
+    std::random_device rd;
+    std::mt19937 mt(rd());
+    std::uniform_int_distribution<int32_t> dist(INT_MIN, INT_MAX);
+    int32_t seed = dist(mt);
+    std::cout << "seed: " << seed << std::endl;
+    pm.newParameter("props.seed", seed, { .constant = true });
 
     pm.newParameter("export.active", false, { .constant = true });
     pm.newParameter("export.interval", 1, { .constant = true });
@@ -177,8 +190,8 @@ void SPHSimulation::initializeParameters(){
     pm.newParameter("render.showGrid", false, { .constant = false });
     pm.newParameter("render.showPtcls", true, { .constant = false });
 
-    pm.get<scalar>("ptcl.boundaryViscosity") = 0.;
-    pm.get<scalar>("ptcl.viscosityConstant") = 0.001;
+    // pm.get<scalar>("ptcl.boundaryViscosity") = 0.;
+    pm.get<scalar>("ptcl.viscosityConstant") = 0.01;
     pm.get<scalar>("sim.maxDt") = 0.001;
     pm.get<scalar>("sim.minDt") = 0.000125;
     pm.get<scalar>("vorticity.nu_t") = 0.0125;
@@ -285,6 +298,7 @@ void SPHSimulation::initializeParameters(){
         node["v0"] = encode(vec, var.v0);
         node["v1"] = encode(vec, var.v1);
         node["v2"] = encode(vec, var.v2);
+        node["body"] = encode(int32_t, var.body);
         return node;
     };
     pm.addDecoder(typeid(Triangle), [this](const YAML::Node& node){
@@ -292,6 +306,7 @@ void SPHSimulation::initializeParameters(){
         var.v0 = callDecoder(vec, node["v0"], var.v0);
         var.v1 = callDecoder(vec, node["v1"], var.v1);
         var.v2 = callDecoder(vec, node["v2"], var.v2);
+        var.body = callDecoder(int32_t, node["body"], var.body);
         return detail::iAny(var);
     });
     vectorEncoder(Triangle, triangleEncoder);
@@ -402,12 +417,23 @@ baseRadius = pm.get<scalar>("props.baseRadius");
         scalar support = std::sqrt(area * targetNeighbors / double_pi);
         scalar packing = packing_2D * support / minCompression;
         vec minVolume{DBL_MAX,DBL_MAX}, maxVolume{-DBL_MAX, -DBL_MAX};
+        vec extentX = {DBL_MAX, DBL_MAX}, extentY{DBL_MAX,DBL_MAX};
+        for(auto& src : fluidSources){
+            extentX.x() = std::min(extentX.x(), src.emitterMin.x());
+            extentX.y() = std::max(extentX.y(), src.emitterMax.x());
+            extentY.x() = std::min(extentX.x(), src.emitterMin.y());
+            extentY.y() = std::max(extentX.y(), src.emitterMax.y());
+        }
         for(auto& src : fluidSources){
             auto n =  ::ceil((src.emitterMax.x() - src.emitterMin.x()) / packing);
             auto m = ::ceil((src.emitterMax.y() - src.emitterMin.y()) / packing);
             auto newX = src.emitterMin.x() + n* packing;
             auto newY = src.emitterMin.y() + m * packing;
-            printf("Changed emitterMax from [%g %g] to [%g %g] (diff: %g %g @ %g %g)\n", src.emitterMax.x(), src.emitterMax.y(), newX, newY, newX - src.emitterMax.x(), newY - src.emitterMax.y(),n,m);
+
+
+            printf("Changed emitterMax from [%g %g] to [%g %g] (diff: %g %g @ %g %g)\n", 
+                    src.emitterMax.x(), src.emitterMax.y(), newX, newY, 
+                    newX - src.emitterMax.x(), newY - src.emitterMax.y(),n,m);
             src.emitterMax.x() = newX;
             src.emitterMax.y() = newY;
         }
@@ -450,6 +476,7 @@ baseRadius = pm.get<scalar>("props.baseRadius");
     fluidDensity.resize(n);;
     fluidVorticity.resize(n);
     fluidAngularVelocity.resize(n);
+    fluidInitialAngularVelocity.resize(n);
     fluidArea.resize(n);
     fluidRestDensity.resize(n);
     fluidSupport.resize(n);
@@ -469,6 +496,7 @@ baseRadius = pm.get<scalar>("props.baseRadius");
     fluidTriangleNeighborList.resize(n);
 
     fluidAdvectionVelocity.resize(n);
+    fluidInitialVelocity.resize(n);
     fluidPressureVelocity.resize(n);
     fluidPressureAccel.resize(n);
     fluidPressureAccelSimple.resize(n);
@@ -501,18 +529,23 @@ baseRadius = pm.get<scalar>("props.baseRadius");
     }
 
     auto& boundaryTriangles = pm.get<std::vector<Triangle>>("triangles");
+    int32_t bIdx = 0;
+    for(auto b: boundaryTriangles){
+        bIdx = std::max(bIdx, b.body);
+    }
+
 
     //gravity = vec(0.0,0.0);
     float d = 1.5;
-    auto addRect = [&](scalar xmin, scalar ymin, scalar xmax, scalar ymax) {
-        boundaryTriangles.push_back(Triangle{ {xmin,ymin},{xmax,ymax},{xmin,ymax} });
-        boundaryTriangles.push_back(Triangle{ {xmin,ymin},{xmax,ymin},{xmax,ymax} });
+    auto addRect = [&](scalar xmin, scalar ymin, scalar xmax, scalar ymax, int32_t bIdx) {
+        boundaryTriangles.push_back(Triangle{ {xmin,ymin},{xmax,ymax},{xmin,ymax}, bIdx });
+        boundaryTriangles.push_back(Triangle{ {xmin,ymin},{xmax,ymin},{xmax,ymax}, bIdx });
 
     };
-    auto addRectSub = [&](scalar xmin, scalar ymin, scalar xmax, scalar ymax, int32_t nx, int32_t ny) {
+    auto addRectSub = [&](scalar xmin, scalar ymin, scalar xmax, scalar ymax, int32_t nx, int32_t ny, int32_t bIdx) {
         if (nx == ny && (nx == 1 || ny == 2)) {
-            boundaryTriangles.push_back(Triangle{ {xmin,ymin},{xmax,ymax},{xmin,ymax} });
-            boundaryTriangles.push_back(Triangle{ {xmin,ymin},{xmax,ymin},{xmax,ymax} });
+            boundaryTriangles.push_back(Triangle{ {xmin,ymin},{xmax,ymax},{xmin,ymax}, bIdx });
+            boundaryTriangles.push_back(Triangle{ {xmin,ymin},{xmax,ymin},{xmax,ymax}, bIdx });
             return;
         }
         auto dx = (xmax - xmin) / (scalar)(nx - 1);
@@ -523,15 +556,15 @@ baseRadius = pm.get<scalar>("props.baseRadius");
             for (int32_t j = 0; j < ny - 1; ++j) {
                 auto yn = ymin + dy * (scalar)(j + 0);
                 auto yp = ymin + dy * (scalar)(j + 1);
-                addRect(xn, yn, xp, yp);
+                addRect(xn, yn, xp, yp, bIdx);
             }
         }
 
     };
-    auto addRectSubh = [&](scalar xmin, scalar ymin, scalar xmax, scalar ymax, scalar lim) {
+    auto addRectSubh = [&](scalar xmin, scalar ymin, scalar xmax, scalar ymax, scalar lim, int32_t bIdx) {
         auto nx = (int32_t) ::ceil((xmax - xmin) / lim);
         auto ny = (int32_t) ::ceil((ymax - ymin) / lim);
-        addRectSub(xmin, ymin, xmax, ymax, nx + 1, ny+1);
+        addRectSub(xmin, ymin, xmax, ymax, nx + 1, ny+1, bIdx);
     };
 
 
@@ -550,6 +583,7 @@ baseRadius = pm.get<scalar>("props.baseRadius");
         auto& domainEpsilon = pm.get<scalar>("domain.epsilon");
 
         auto spacing = 0.23999418487168855 * baseSupport;
+        // std::cout << spacing << std::endl;
         auto packing = packing_2D * baseSupport;
 
         auto bottomRows = ::ceil(domainEpsilon / packing);
@@ -560,39 +594,39 @@ baseRadius = pm.get<scalar>("props.baseRadius");
         addRect(domainMin.x() + 0, 
                 domainMin.y() + 0, 
                 domainMin.x() + adjustedEpsilon, 
-                domainMin.y() + domainHeight);
+                domainMin.y() + domainHeight, ++bIdx);
         addRect(domainMin.x() + adjustedEpsilon, 
                 domainMin.y() + 0, 
                 domainMin.x() + domainWidth - adjustedEpsilon, 
-                domainMin.y() + adjustedEpsilon);
+                domainMin.y() + adjustedEpsilon, bIdx);
         addRect(domainMin.x() + domainWidth - adjustedEpsilon, 
                 domainMin.y() + 0, 
                 domainMin.x() + domainWidth, 
-                domainMin.y() + domainHeight);
+                domainMin.y() + domainHeight, bIdx);
         addRect(domainMin.x() + adjustedEpsilon,
                 domainMin.y() + domainHeight - adjustedEpsilon, 
                 domainMin.x() + domainWidth - adjustedEpsilon, 
-                domainMin.y() + domainHeight);
+                domainMin.y() + domainHeight, bIdx);
         }
         else if(periodicX && !periodicY){
         addRect(domainMin.x() + 0, 
                 domainMin.y() + 0, 
                 domainMax.x(), 
-                domainMin.y() + adjustedEpsilon);
+                domainMin.y() + adjustedEpsilon, ++bIdx);
         addRect(domainMin.x(), 
                 domainMax.y() - adjustedEpsilon, 
                 domainMax.x(), 
-                domainMax.y());
+                domainMax.y(), bIdx);
         }
         else if(periodicY && !periodicX){
         addRect(domainMin.x() + 0, 
                 domainMin.y() + 0, 
                 domainMin.x() + adjustedEpsilon, 
-                domainMax.y());
+                domainMax.y(), ++bIdx);
         addRect(domainMax.x() - adjustedEpsilon, 
                 domainMin.y(), 
                 domainMax.x(), 
-                domainMax.y());
+                domainMax.y(), bIdx);
         }
 
     
@@ -647,7 +681,7 @@ baseRadius = pm.get<scalar>("props.baseRadius");
                 vec p(x,y);
                 for(int32_t ti = 0; ti < boundaryTriangles.size(); ++ti){
                     const auto& t = boundaryTriangles[ti];
-                    auto [v0,v1,v2] = t;
+                    auto [v0,v1,v2, i] = t;
                     if(pointInTriangle(p,v0,v1,v2))
                     {
                         std::lock_guard lg(m);
@@ -735,10 +769,11 @@ baseRadius = pm.get<scalar>("props.baseRadius");
     auto& numPtcls = pm.get<int32_t>("props.numPtcls");
     for(const auto& source: fluidSources){
         if(source.emitter != emitter_t::oneTime){ continue;}
-    
-        printf("noise: %d seed: %d amp: %g freq: %g octaves: %d\n",source.velocityNoise ? 1 : 0, source.noiseSeed,source.noiseAmplitude,source.noiseFrequency,source.noiseOctaves);
+            siv::PerlinNoise::seed_type seed = source.noiseSeed;
+        if(source.noiseSeed != 1337)
+            seed = pm.get<int32_t>("props.seed");
+        printf("noise: %d seed: %lu amp: %g freq: %g octaves: %d\n",source.velocityNoise ? 1 : 0, seed,source.noiseAmplitude,source.noiseFrequency,source.noiseOctaves);
 
-        const siv::PerlinNoise::seed_type seed = source.noiseSeed;
 
         const siv::PerlinNoise perlin_x{ seed };
         const siv::PerlinNoise perlin_y{ seed * seed };
@@ -750,6 +785,7 @@ baseRadius = pm.get<scalar>("props.baseRadius");
         for(int32_t i = 0; i < ptcls.size(); ++ i){
         auto [ix, iy] = getCellIdx(ptcls[i].x(), ptcls[i].y());
         bool emit = true;
+        scalar rho = 0.;
         if(source.compressionRatio == 1.)
         { 
         for (int32_t xi = -1; xi <= 1; ++xi) {
@@ -779,9 +815,16 @@ baseRadius = pm.get<scalar>("props.baseRadius");
         // }
         
         for(auto t: boundaryTriangles){
+            // std::cout << t.v0 << " " << t.v1 << " " << t.v2 << std::endl;
             if(pointInTriangle(ptcls[i], t.v0, t.v1, t.v2))
                 emit = false;
+            auto [hit, pb, d, k, gk] = interactTriangle(ptcls[i], baseSupport, t);
+            if(emit && hit){
+                std::cout << hit  << " " << k << std::endl;
+                rho += k; 
+        };
         }
+            if(rho > 0.43) emit = false;
         if(!emit)continue;
         auto virtualMin = pm.get<vec>("domain.virtualMin");
         auto virtualMax = pm.get<vec>("domain.virtualMax");
@@ -834,6 +877,7 @@ baseRadius = pm.get<scalar>("props.baseRadius");
             fluidPriorPressure[numPtcls]    = 0.;
             fluidVorticity[numPtcls] = 0.;
             fluidAngularVelocity[numPtcls] = 0.;
+            fluidInitialAngularVelocity[numPtcls] = 0.;
             fluidUID[numPtcls] = fluidCounter++;
             fluidInitialPosition[numPtcls] = ptcls[i];
             fluidGhostIndex[numPtcls] = -1;
@@ -844,6 +888,13 @@ baseRadius = pm.get<scalar>("props.baseRadius");
         }
     }
     this->boundaryTriangles = boundaryTriangles;
+    for(int32_t i = 0; i < bIdx + 1; ++i){
+        this->boundaryPressureForceX.push_back(new boost::atomic<scalar>(0.));
+        this->boundaryPressureForceY.push_back(new boost::atomic<scalar>(0.));
+        this->boundaryDragForceX.push_back(new boost::atomic<scalar>(0.));
+        this->boundaryDragForceY.push_back(new boost::atomic<scalar>(0.));
+    }
+    // this->boundaryAccelerations.resize(bIdx + 1);
     neighborList();
     // return;
 
@@ -870,7 +921,7 @@ baseRadius = pm.get<scalar>("props.baseRadius");
                     }
                 }
                 //pi.rho = std::max(pi.rho, 0.5);
-                boundaryFunc(i, [&rho](auto bpos, auto d, auto k, auto gk, auto triangle) {
+                boundaryFunc(i, [&rho](auto bpos, auto d, auto k, auto gk, auto triangle, auto triIdx) {
                     rho += k; });
                 // if(rho > 1.0) {filtered = true; filteredCount++;};
             if(filtered) continue;

@@ -3,6 +3,7 @@
 #include <array>
 #include <chrono>
 #include <eigen3/Eigen/Dense>
+#include <boost/atomic.hpp>
 #include <tools/ParameterManager.h>
 #include <iostream>
 #include <math.h>
@@ -44,6 +45,7 @@ constexpr inline scalar packing_2D = 0.399200743165053487;
 
 struct Triangle {
     vec v0 = vec(0, 0), v1 = vec(0, 0), v2 = vec(0, 0);
+    int32_t body = 0;
 };
 std::tuple<bool, vec, scalar, scalar, vec> interactTriangle(vec p, scalar support, Triangle tri);
 std::tuple<bool, vec, scalar, scalar, vec> interactTriangleBaryCentric(vec p, scalar support, scalar rho0, Triangle tri, scalar rhoi, scalar fi, scalar f0, scalar f1, scalar f2);
@@ -114,9 +116,17 @@ class SPHSimulation{
         const auto& tri = boundaryTriangles[ti];
         auto [hit, pb, d, k, gk] = interactTriangle(p, h, tri);
         if (hit)
-            c(pb, d, k, gk, true);
+            c(pb, d, k, gk, true, ti);
+    
+}}
+        template<typename Func> auto boundaryFunc(const vec& p, const scalar& h, Func&& c) {
+            for(int32_t t = 0; t < boundaryTriangles.size(); ++t){
+        auto tri = boundaryTriangles[t];
+        auto [hit, pb, d, k, gk] = interactTriangle(p, h, tri);
+        if (hit)
+            c(pb, d, k, gk, true, t);
     }
-}
+        }
 
 
     std::vector<int32_t>& getCell(scalar x, scalar y);
@@ -124,7 +134,9 @@ class SPHSimulation{
     std::vector<int32_t>& getTriangleCell(int32_t xi, int32_t yi);
 
 template<typename T> auto syncGhost(std::vector<T>& ptr){
-    for(auto idx : ghostParticles){
+    #pragma omp parallel for
+    for(int32_t i = 0; i < ghostParticles.size(); ++i){
+        int32_t idx = ghostParticles[i];
         ptr[idx] = ptr[fluidGhostIndex[idx]];
     }
 }
@@ -194,7 +206,7 @@ export:
     }
 
     std::vector<vec> fluidPosition, fluidVelocity, fluidAccel, fluidPredVelocity, fluidPredAccel, fluidPredPosition;
-    std::vector<scalar> fluidDensity, fluidVorticity, fluidAngularVelocity, fluidArea, fluidRestDensity, fluidSupport;
+    std::vector<scalar> fluidDensity, fluidVorticity, fluidAngularVelocity, fluidArea, fluidRestDensity, fluidSupport, fluidInitialAngularVelocity;
     std::vector<scalar> fluidAlpha, fluidActualArea, fluidPressure1, fluidPressure2, fluidBoundaryPressure, fluidSourceTerm, fluidDpDt, fluidDensityStar, fluidPriorPressure;
     std::vector<std::vector<int32_t>> fluidNeighborList, fluidTriangleNeighborList;
     std::vector<int32_t> fluidUID;
@@ -209,6 +221,7 @@ export:
     std::vector<std::pair<vec,vec>> boundaryParticles;
 
     std::vector<Triangle> boundaryTriangles;
+    std::vector<boost::atomic<scalar>*> boundaryPressureForceX, boundaryPressureForceY, boundaryDragForceX, boundaryDragForceY;
 
     std::vector<fluidSource> fluidSources;
     std::vector<gravitySource> gravitySources;
@@ -217,13 +230,14 @@ export:
     std::vector<vec> fluidColorFieldGradient, fluidColorFieldGradientDifference, fluidColorFieldGradientSymmetric;
     std::vector<scalar> fluidColorField;
 
-    std::vector<vec> fluidAdvectionVelocity, fluidPressureAccel, fluidPressureAccelSimple, fluidPressureAccelDifference, fluidPressureVelocity, fluidInitialPosition;
+    std::vector<vec> fluidAdvectionVelocity, fluidPressureAccel, fluidPressureAccelSimple, fluidPressureAccelDifference, fluidPressureVelocity, fluidInitialPosition, fluidInitialVelocity;
 
     enum struct property_t{
         position, velocity, accel, predVelocity, predAccel, predPosition,
         density, vorticity, angularVelocity, area, restDensity, support,
         alpha, actualArea, pressure1, pressure2, boundaryPressure, sourceTerm, dpdt, rhoStar, priorPressure,
-        UID, neighbors, ghostIndex
+        UID, neighbors, ghostIndex,
+        color, colorGrad, colorGradSymm, colorGradDiff
     };
 
     std::pair<int32_t, int32_t> getCellIdx(scalar x, scalar y);

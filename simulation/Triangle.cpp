@@ -1,11 +1,11 @@
 #include "2DMath.h"
 #include <cfloat>
 auto triangleArea(Triangle t) {
-	auto [p0, p1, p2] = t; 
+	auto [p0, p1, p2, i] = t; 
 	return 0.5 * (-p1[1] * p2[0] + p0[1] * (-p1[0] + p2[0]) + p0[0] * (p1[1] - p2[1]) + p1[0] * p2[1]) + epsilon;
 }
 auto pointInTriangle(vec p, Triangle tri) {
-	auto [p0, p1, p2] = tri;
+	auto [p0, p1, p2, i] = tri;
 	auto area = triangleArea(tri);
 	auto s = 1.0 / (2.0 * area) * (p0[1] * p2[0] - p0[0] * p2[1] + (p2[1] - p0[1]) * p[0] + (p0[0] - p2[0]) * p[1]);
 	auto t = 1.0 / (2.0 * area) * (p0[0] * p1[1] - p0[1] * p1[0] + (p0[1] - p1[1]) * p[0] + (p1[0] - p0[0]) * p[1]);

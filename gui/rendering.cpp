@@ -246,6 +246,11 @@ void render(int32_t screenWidth, int32_t screenHeight) {
     MAP_PROPERTY(neighbors);
     MAP_PROPERTY(ghostIndex);
 
+    MAP_PROPERTY(color);
+    MAP_PROPERTY(colorGrad);
+    MAP_PROPERTY(colorGradSymm);
+    MAP_PROPERTY(colorGradDiff);
+
 
   static std::string colorMap = "";
 static v4 *color_map = nullptr;

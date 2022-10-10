@@ -26,7 +26,7 @@ void GUI::initGL(int argc, char* argv[]) {
     auto domainWidth = domainMax.x() - domainMin.x();
     auto domainHeight = domainMax.y() - domainMin.y();
 
-    auto maxWidth = 3600;
+    auto maxWidth = 2048;
     auto maxHeight = 2048;
     auto xrel = ((double) maxWidth) / domainWidth;
     auto yrel = ((double) maxHeight) / domainHeight;
@@ -40,9 +40,13 @@ void GUI::initGL(int argc, char* argv[]) {
         screenHeight =  maxWidth * domainHeight / domainWidth;
     }
     else{
-        screenWidth = maxHeight * domainWidth / domainHeight;
+        screenWidth = maxHeight *domainWidth / domainHeight;
         screenHeight =  maxHeight;
     }
+    screenWidth = screenWidth % 2 == 1 ? screenWidth -1 : screenWidth;
+    screenHeight = screenHeight % 2 == 1 ? screenHeight -1 : screenHeight;
+
+    // screenWidth = screenHeight = 2048;
     std::cout << "Window Resolution: " << screenWidth << " x " << screenHeight << std::endl;
 
     window = glfwCreateWindow(screenWidth, screenHeight, "OmniFlow", NULL, NULL);
